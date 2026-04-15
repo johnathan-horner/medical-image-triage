@@ -4,3 +4,8 @@ plotly
 pandas
 Pillow
 numpy
+python-dateutil
+matplotlib
+seaborn
+scikit-learn
+tensorflow
