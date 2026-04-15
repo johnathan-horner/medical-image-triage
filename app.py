@@ -222,7 +222,7 @@ def render_sidebar():
         # Architecture Diagram
         try:
             st.image("docs/Medical_Image_Triage_AWS_Architecture.png",
-                    caption="AWS Architecture", use_column_width=True)
+                    caption="AWS Architecture", width=None)
         except:
             st.info("Architecture diagram not found")
 
@@ -323,7 +323,7 @@ def render_triage_tab(demo_mode):
                     # Uploaded file
                     image = Image.open(uploaded_file)
 
-                st.image(image, caption="Uploaded Medical Image", use_column_width=True)
+                st.image(image, caption="Uploaded Medical Image", width=None)
 
                 # Triage button
                 if st.button("🔍 Analyze Image", type="primary", use_container_width=True):
@@ -495,8 +495,8 @@ def render_audit_tab(demo_mode):
             display_df['timestamp'] = display_df['timestamp'].dt.strftime('%Y-%m-%d %H:%M:%S')
 
         styled_df = display_df.style\
-            .map(style_routing_decision, subset=['routing_decision'])\
-            .map(style_confidence, subset=['confidence'])\
+            .apply(style_routing_decision, subset=['routing_decision'])\
+            .apply(style_confidence, subset=['confidence'])\
             .format({'confidence': '{:.1%}'})\
             .set_properties(**{'text-align': 'center'})
 
