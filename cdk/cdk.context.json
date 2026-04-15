@@ -1,0 +1,38 @@
+{
+  "account": "",
+  "region": "us-east-1",
+  "environment": "dev",
+  "project_name": "medical-image-triage",
+  "sagemaker": {
+    "instance_type": "ml.t2.medium",
+    "instance_count": 1,
+    "max_concurrent_transforms": 10
+  },
+  "s3": {
+    "image_retention_days": 1,
+    "archive_retention_years": 7
+  },
+  "dynamodb": {
+    "billing_mode": "PAY_PER_REQUEST",
+    "point_in_time_recovery": true
+  },
+  "lambda": {
+    "timeout_seconds": 300,
+    "memory_mb": 1024,
+    "python_version": "3.11"
+  },
+  "monitoring": {
+    "confidence_threshold": 0.7,
+    "error_rate_threshold": 0.05,
+    "latency_threshold_ms": 5000
+  },
+  "cognito": {
+    "password_policy": {
+      "min_length": 12,
+      "require_uppercase": true,
+      "require_lowercase": true,
+      "require_numbers": true,
+      "require_symbols": true
+    }
+  }
+}
