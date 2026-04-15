@@ -574,7 +574,7 @@ def render_dashboard_tab(demo_mode):
         )
         fig_line.add_hline(y=0.7, line_dash="dash", line_color="orange", annotation_text="Medium Confidence Threshold")
         fig_line.add_hline(y=0.9, line_dash="dash", line_color="green", annotation_text="High Confidence Threshold")
-        fig_line.update_yaxis(range=[0.5, 1.0])
+        fig_line.update_layout(yaxis=dict(range=[0.5, 1.0]))
         fig_line.update_layout(height=400)
         st.plotly_chart(fig_line, use_container_width=True)
 
