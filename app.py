@@ -220,11 +220,8 @@ def render_sidebar():
             """)
 
         # Architecture Diagram
-        try:
-            st.image("docs/Medical_Image_Triage_AWS_Architecture.png",
-                    caption="AWS Architecture", width=None)
-        except:
-            st.info("Architecture diagram not found")
+        st.image("docs/Medical_Image_Triage_AWS_Architecture.png",
+                caption="AWS Architecture", width=None)
 
         # Tech Stack
         st.markdown("**Tech Stack:**")
@@ -290,7 +287,7 @@ def render_triage_tab(demo_mode):
                 sample_key = sample_mapping[sample_choice]
 
                 try:
-                    sample_path = f"/Users/johnathanhorner/medical-image-triage/{SAMPLE_IMAGES[sample_key]}"
+                    sample_path = SAMPLE_IMAGES[sample_key]
                     if os.path.exists(sample_path):
                         uploaded_file = sample_path
                         st.success(f"Loaded sample: {sample_choice}")
