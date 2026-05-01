@@ -39,13 +39,22 @@ logger = logging.getLogger(__name__)
 # Security
 security = HTTPBearer()
 
+# Tags metadata for OpenAPI documentation
+tags_metadata = [
+    {"name": "Health", "description": "System health and status endpoints"},
+    {"name": "Prediction", "description": "Medical image classification and triage"},
+    {"name": "Audit", "description": "Audit trail and compliance tracking"},
+    {"name": "Dashboard", "description": "Metrics, monitoring, and analytics"},
+]
+
 # Initialize FastAPI app
 app = FastAPI(
     title="Medical Image Triage System",
     description="Production-grade AI system for medical image classification and triage routing",
     version="1.0.0",
     docs_url="/docs",
-    redoc_url="/redoc"
+    redoc_url="/redoc",
+    openapi_tags=tags_metadata
 )
 
 # CORS middleware
@@ -216,9 +225,9 @@ async def startup_event():
         raise
 
 
-@app.get("/health", response_model=HealthCheckResponse)
+@app.get("/health", response_model=HealthCheckResponse, summary="System Health Check", tags=["Health"])
 async def health_check():
-    """Health check endpoint."""
+    """Check system health, uptime, and service availability."""
     uptime = time.time() - startup_time
 
     return HealthCheckResponse(
@@ -231,10 +240,10 @@ async def health_check():
     )
 
 
-@app.post("/predict", response_model=PredictionResponse)
+@app.post("/predict", response_model=PredictionResponse, summary="Classify Medical Image", tags=["Prediction"])
 async def predict_image(
     background_tasks: BackgroundTasks,
-    file: UploadFile = File(...),
+    file: UploadFile = File(..., description="Medical image file (DICOM, PNG, JPEG)"),
     patient_id: Optional[str] = None,
     study_id: Optional[str] = None,
 ):
@@ -309,12 +318,12 @@ async def predict_image(
         raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
 
 
-@app.get("/audit/predictions", response_model=List[AuditLogEntry])
+@app.get("/audit/predictions", response_model=List[AuditLogEntry], summary="Get Audit Trail", tags=["Audit"])
 async def get_audit_log(
-    patient_id: Optional[str] = Query(None),
-    study_id: Optional[str] = Query(None),
-    prediction_id: Optional[str] = Query(None),
-    start_date: Optional[datetime] = Query(None),
+    patient_id: Optional[str] = Query(None, description="Patient identifier"),
+    study_id: Optional[str] = Query(None, description="Study identifier"),
+    prediction_id: Optional[str] = Query(None, description="Specific prediction ID"),
+    start_date: Optional[datetime] = Query(None, description="Start date filter"),
     end_date: Optional[datetime] = Query(None),
     limit: int = Query(100, le=1000),
     offset: int = Query(0, ge=0)
@@ -345,9 +354,9 @@ async def get_audit_log(
         raise HTTPException(status_code=500, detail=f"Audit query failed: {str(e)}")
 
 
-@app.get("/dashboard/metrics", response_model=DashboardMetrics)
+@app.get("/dashboard/metrics", response_model=DashboardMetrics, summary="Get Dashboard Metrics", tags=["Dashboard"])
 async def get_dashboard_metrics():
-    """Get dashboard metrics for monitoring and analysis."""
+    """Get comprehensive dashboard metrics for monitoring and analysis."""
     if metrics_calculator is None:
         raise HTTPException(status_code=503, detail="Metrics service unavailable")
 
@@ -358,9 +367,9 @@ async def get_dashboard_metrics():
         raise HTTPException(status_code=500, detail=f"Metrics calculation failed: {str(e)}")
 
 
-@app.get("/dashboard/drift", response_model=ModelDriftMetrics)
+@app.get("/dashboard/drift", response_model=ModelDriftMetrics, summary="Get Model Drift Metrics", tags=["Dashboard"])
 async def get_drift_metrics(
-    days: int = Query(7, ge=1, le=90, description="Number of days to analyze")
+    days: int = Query(7, ge=1, le=90, description="Number of days to analyze for drift detection")
 ):
     """Get model drift metrics for the specified period."""
     if metrics_calculator is None:
