@@ -318,6 +318,58 @@ curl "https://API_GATEWAY_URL/dashboard/drift?days=30" \
   -H "Authorization: Bearer YOUR_JWT_TOKEN"
 ```
 
+## 🔌 MCP Server Integration
+
+The Medical Image Triage System includes a Model Context Protocol (MCP) server that exposes system functionality through a standardized interface for AI assistant integration.
+
+### Available Tools
+
+#### `triage_image(image_path: str)`
+Classify a medical image and determine triage routing decision.
+- **Args**: `image_path` - Path to the medical image file
+- **Returns**: Diagnosis label, confidence score, routing decision, processing time, and prediction ID
+
+#### `get_audit_trail(start_date?, end_date?, image_hash?)`
+Retrieve audit trail entries for medical image classifications.
+- **Args**: Optional date range filters and specific image hash
+- **Returns**: List of audit trail entries with timestamps and metadata
+
+#### `get_dashboard_metrics()`
+Get current dashboard metrics for the triage system.
+- **Returns**: Total images processed, average confidence, drift status, and routing distribution
+
+#### `check_drift_status()`
+Check current model drift status and PSI score.
+- **Returns**: PSI score, threshold status, drift level, and recommendations
+
+### Available Resources
+
+#### `model://efficientnet`
+Returns EfficientNetB0 model information including version, accuracy metrics, and training data summary.
+
+#### `data://routing_rules`
+Returns confidence threshold routing configuration for auto-triage, expedited review, and senior physician routing decisions.
+
+### Available Prompts
+
+#### `triage_review`
+Pre-built prompt for reviewing a batch of triage decisions with confidence analysis. Use for clinical assessment of AI triage decisions.
+
+#### `compliance_audit`
+Pre-built prompt for generating HIPAA compliance summaries of recent triage activity and system access patterns.
+
+### Running the MCP Server
+
+```bash
+# Install FastMCP
+pip install fastmcp
+
+# Run the MCP server
+python mcp_server.py
+```
+
+The server will start on the default MCP port and expose all tools, resources, and prompts for integration with MCP-compatible AI assistants.
+
 ## 🧪 Testing
 
 ### Run Unit Tests
