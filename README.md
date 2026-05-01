@@ -750,6 +750,10 @@ After teardown, monitor your AWS billing console for 24-48 hours to ensure no un
 - [AWS CDK Documentation](https://docs.aws.amazon.com/cdk/)
 - [SageMaker Best Practices](https://docs.aws.amazon.com/sagemaker/latest/dg/best-practices.html)
 
+## Architecture Decisions
+
+See [docs/decisions/](docs/decisions/) for architecture decision records.
+
 ## Model Documentation
 
 See [MODEL_CARD.md](MODEL_CARD.md) for detailed model specifications, performance metrics, and compliance information.
