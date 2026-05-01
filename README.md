@@ -750,6 +750,10 @@ After teardown, monitor your AWS billing console for 24-48 hours to ensure no un
 - [AWS CDK Documentation](https://docs.aws.amazon.com/cdk/)
 - [SageMaker Best Practices](https://docs.aws.amazon.com/sagemaker/latest/dg/best-practices.html)
 
+## Model Documentation
+
+See [MODEL_CARD.md](MODEL_CARD.md) for detailed model specifications, performance metrics, and compliance information.
+
 ## 📊 Project Statistics
 
 - **Lines of Code**: ~5,000 (Python + CDK)
