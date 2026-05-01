@@ -1,5 +1,7 @@
 # Medical Image Triage System
 
+![CI](https://github.com/johnathan-horner/medical-image-triage/actions/workflows/ci.yml/badge.svg)
+
 A production-grade AI system for medical image classification and intelligent triage routing. Built with TensorFlow, AWS serverless architecture, and comprehensive HIPAA compliance features.
 
 ## Architecture
