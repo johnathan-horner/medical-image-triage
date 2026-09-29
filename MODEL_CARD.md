@@ -15,11 +15,12 @@
 ## Training Data
 - Base: ImageNet (pretrained weights)
 - Fine-tuned on: Medical image dataset
-- Classes: [list the classes from the project]
+- Classes: Normal, Pneumonia, Pneumothorax, Infiltration, Mass (5 classes; 224x224x3 input)
 
 ## Evaluation Metrics
 - Accuracy, Precision, Recall, F1, AUC-ROC
 - Confusion matrix available via dashboard endpoint
+- Evaluation metrics will be published here once measured on a held-out split.
 
 ## Routing Thresholds
 - >0.9: Auto-triage (standard queue)

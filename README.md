@@ -118,29 +118,11 @@ graph TB
 - **Real-time Monitoring**: Performance metrics and model drift detection
 - **Horizontal Scaling**: Docker containerization with TensorFlow Serving support
 - **Error Handling**: Comprehensive exception management and logging
-- **Testing**: 90%+ test coverage with unit, integration, and compliance tests
+- **Testing**: Unit, integration, and compliance tests
 
 ## 📊 Model Performance
 
-| Metric | Value | Notes |
-|--------|-------|-------|
-| **Overall Accuracy** | 92.3% | Evaluated on test set |
-| **Precision (avg)** | 91.8% | Weighted average across classes |
-| **Recall (avg)** | 92.1% | Weighted average across classes |
-| **F1 Score (avg)** | 91.9% | Harmonic mean of precision/recall |
-| **AUC-ROC (avg)** | 0.967 | Multi-class ROC analysis |
-
-### Class-specific Performance
-- **Normal**: 94.2% accuracy, 0.971 AUC
-- **Pneumonia**: 89.8% accuracy, 0.962 AUC
-- **Pneumothorax**: 91.5% accuracy, 0.974 AUC
-- **Infiltration**: 88.9% accuracy, 0.958 AUC
-- **Mass**: 90.7% accuracy, 0.969 AUC
-
-### Triage Performance
-- **Auto-approval Rate**: 45% (high-confidence predictions)
-- **Average Review Time**: 2.3 hours for expedited queue
-- **Senior Review Accuracy**: 97.1% (complex/low-confidence cases)
+Evaluation metrics will be published here once measured on a held-out split.
 
 ## 🛠️ Installation & Setup
 
@@ -427,11 +409,11 @@ condition_configs = {
 {
   "account": "123456789012",
   "region": "us-east-1",
-  "environment": "prod",
+  "environment": "dev",
   "sagemaker": {
-    "instance_type": "ml.m5.xlarge",  # Production instance
-    "instance_count": 2,              # Multi-AZ deployment
-    "max_concurrent_transforms": 50
+    "instance_type": "ml.t2.medium",
+    "instance_count": 1,
+    "max_concurrent_transforms": 10
   },
   "dynamodb": {
     "billing_mode": "PAY_PER_REQUEST",
@@ -455,7 +437,7 @@ condition_configs = {
 - **Automatic Recommendations**: Retraining suggestions and data quality alerts
 
 ### Compliance Monitoring
-- **Audit Coverage**: 100% of predictions logged with complete decision chains
+- **Audit Coverage**: Predictions logged with complete decision chains
 - **Data Retention**: Automated cleanup based on 7-year retention policy
 - **Access Tracking**: All system interactions logged for security auditing
 - **HIPAA Compliance**: No PHI stored, all identifiers hashed
@@ -541,75 +523,13 @@ When deploying in production for healthcare use:
 - **Memory Management**: Efficient image processing pipeline
 - **Horizontal Scaling**: Stateless design for easy scaling
 
-### AWS Performance Benchmarks
-- **Inference Time**: 200ms average per image (SageMaker ml.t2.medium), 75ms (ml.m5.xlarge)
-- **Throughput**: 300+ predictions/minute (single SageMaker endpoint)
-- **Lambda Cold Start**: 2-3 seconds (first invocation)
-- **Lambda Warm Response**: 50ms average
-- **DynamoDB Query Latency**: 10-20ms for audit queries
+## 💰 AWS Cost Optimization
 
-## 💰 AWS Cost Estimates
-
-### Development Environment (1K images/day)
-**Monthly Cost Breakdown:**
-
-| Service | Usage | Monthly Cost |
-|---------|-------|--------------|
-| **SageMaker Endpoint** | ml.t2.medium, 24/7 | $35.04 |
-| **Lambda Functions** | 1K invocations, 512MB, 30s avg | $0.83 |
-| **API Gateway** | 1K requests | $0.0035 |
-| **DynamoDB** | Pay-per-request, 1K writes, 10K reads | $0.28 |
-| **S3 Storage** | 100GB images, Standard tier | $2.30 |
-| **S3 Requests** | 1K PUT, 1K GET | $0.004 |
-| **CloudWatch** | Basic metrics and logs | $2.00 |
-| **Cognito** | 50 MAU | $0.028 |
-| **KMS** | 10K operations | $0.30 |
-| **Data Transfer** | 10GB outbound | $0.90 |
-| **Total** | | **~$41.70/month** |
-
-### Production Environment (10K images/day)
-**Monthly Cost Breakdown:**
-
-| Service | Usage | Monthly Cost |
-|---------|-------|--------------|
-| **SageMaker Endpoint** | ml.m5.xlarge, 24/7 | $140.16 |
-| **Lambda Functions** | 10K invocations, 1024MB, 30s avg | $16.80 |
-| **API Gateway** | 10K requests | $0.035 |
-| **DynamoDB** | Pay-per-request, 10K writes, 100K reads | $2.75 |
-| **S3 Storage** | 1TB images, Standard-IA after 30 days | $23.00 |
-| **S3 Requests** | 10K PUT, 10K GET | $0.04 |
-| **CloudWatch** | Enhanced metrics and logs | $10.00 |
-| **Cognito** | 500 MAU | $0.28 |
-| **KMS** | 100K operations | $3.00 |
-| **Data Transfer** | 100GB outbound | $9.00 |
-| **SNS** | 10K notifications | $0.50 |
-| **Total** | | **~$205.60/month** |
-
-### Enterprise Environment (100K images/day)
-**Monthly Cost Breakdown:**
-
-| Service | Usage | Monthly Cost |
-|---------|-------|--------------|
-| **SageMaker Endpoint** | 2x ml.m5.2xlarge, Auto-scaling | $1,121.28 |
-| **Lambda Functions** | 100K invocations, 2048MB, 45s avg | $337.50 |
-| **API Gateway** | 100K requests | $0.35 |
-| **DynamoDB** | On-demand, 100K writes, 1M reads | $27.50 |
-| **S3 Storage** | 10TB images, Intelligent Tiering | $204.00 |
-| **S3 Requests** | 100K PUT, 100K GET | $0.40 |
-| **CloudWatch** | Custom metrics and dashboards | $50.00 |
-| **Cognito** | 5K MAU | $13.75 |
-| **KMS** | 1M operations | $30.00 |
-| **Data Transfer** | 1TB outbound | $90.00 |
-| **SNS** | 100K notifications | $5.00 |
-| **WAF** | Web Application Firewall | $5.00 |
-| **Total** | | **~$1,884.78/month** |
-
-### Cost Optimization Strategies
-1. **Reserved Instances**: Save 30-50% on SageMaker endpoints with 1-year commitments
-2. **Spot Instances**: Use spot instances for batch processing to save up to 70%
+1. **Reserved Instances**: Use 1-year commitments for SageMaker endpoints
+2. **Spot Instances**: Use spot instances for batch processing
 3. **S3 Lifecycle**: Automatically move old data to cheaper storage classes
 4. **Lambda Provisioned Concurrency**: For predictable workloads, reduce cold starts
-5. **DynamoDB Reserved Capacity**: For steady workloads, save up to 75%
+5. **DynamoDB Reserved Capacity**: Use reserved capacity for steady workloads
 6. **Multi-AZ vs Single-AZ**: Use single-AZ for dev/test environments
 
 ## 🛣️ Roadmap & Future Enhancements
@@ -648,7 +568,6 @@ When deploying in production for healthcare use:
 - Update documentation as needed
 
 ### Code Quality Standards
-- **Test Coverage**: Minimum 90% coverage required
 - **Type Checking**: mypy type checking passes
 - **Linting**: flake8 and black formatting
 - **Security**: bandit security scanning
@@ -762,15 +681,14 @@ See [MODEL_CARD.md](MODEL_CARD.md) for detailed model specifications, performanc
 
 ## 📊 Project Statistics
 
-- **Lines of Code**: ~5,000 (Python + CDK)
-- **Test Coverage**: 92%
-- **Dependencies**: 24 packages (including AWS SDKs)
+- **Lines of Code**: ~8,700 (Python + CDK, excluding tests)
+- **Dependencies**: 10 packages in `requirements.txt` (18 in `requirements_full.txt`)
 - **AWS Services**: 12 core services
 - **Lambda Functions**: 4 primary functions
-- **API Endpoints**: 8 primary endpoints
-- **DynamoDB Tables**: 1 main table with 2 GSIs
+- **API Endpoints**: 8 primary endpoints (3 API Gateway methods + 5 FastAPI routes)
+- **DynamoDB Tables**: 1 main table with 3 GSIs
 - **CDK Stacks**: 2 infrastructure stacks
-- **Documentation Pages**: 30+ pages
+- **Documentation Pages**: 8 Markdown files (README, MODEL_CARD, CONTRIBUTING, 5 ADRs)
 
 ---
 
