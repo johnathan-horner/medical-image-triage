@@ -2,7 +2,10 @@
 
 ![CI](https://github.com/johnathan-horner/medical-image-triage/actions/workflows/ci.yml/badge.svg)
 
-**Status:** working local demo. Runs on a laptop CPU. Not deployed. **Decision support only, not a diagnosis.**
+**Status: In progress.** The model, routing, LLM summary, audit log and Streamlit app run locally
+today on a laptop CPU. There is no hosted demo of this version. **Decision support only, not a diagnosis.**
+
+Independent reference project by Shoot It Analytics LLC. Built with public or synthetic data.
 
 ## What it does
 
@@ -33,6 +36,42 @@ research dataset, downsized to 64x64.
 | ![queue](docs/screenshots/03-review-queue.png) | ![audit](docs/screenshots/04-audit-log.png) |
 
 ![evaluation](docs/screenshots/05-model-evaluation.png)
+
+## Why I built this
+
+**The problem.** Radiology departments read more chest X-rays than they have time for, and urgent
+studies can wait in the same queue as routine ones. Image models can help sort the worklist, but a
+model that is confidently wrong is dangerous, so any triage aid has to know when to hand a case to a
+person and has to leave a record of what it did.
+
+**What I set out to prove.** Whether a small image model trained on a laptop CPU can split chest
+X-rays into cases it can sort on its own with high accuracy and cases that need a person, with every
+step logged and every result clearly labeled as decision support.
+
+**Key design decisions**
+- **Data:** PneumoniaMNIST (public, CC BY 4.0), pediatric chest X-rays at 64x64. Small enough to
+  train on a CPU in about half an hour.
+- **Model:** ResNet18 pretrained on ImageNet and fine-tuned, a well-understood baseline, not a novel
+  architecture.
+- **Threshold:** picked on one half of the test split and reported on the other half. A threshold
+  picked on the validation split failed, because this dataset's validation split is easier than its
+  test split.
+- **Guardrails:** the LLM sees only the model's numbers and route, never the image; a template takes
+  over if Bedrock is unavailable; every result carries "Decision support only, not a diagnosis.";
+  the audit log is append-only.
+- **Cost:** CPU training and about $0.0015 per LLM summary on Claude Sonnet 4.6 through Bedrock.
+
+**Results.** On the held-out test split: 92.1% accuracy, 99.5% recall for pneumonia, 79.9%
+specificity. With the routing threshold, 76.9% of cases were auto-triaged at 97.9% accuracy with no
+missed pneumonia, and the rest went to a person (details below).
+
+**Limits.** Public research data only; never used with real patients. Not a medical device, not
+cleared or certified for clinical use, and not a diagnosis.
+
+**What I'd do next in a real deployment.** Validate on images from the target hospitals and
+equipment at full resolution, calibrate probabilities, run a prospective silent trial against
+radiologist reads, add reviewer authentication, and go through the regulatory path before any
+clinical use.
 
 ## Architecture
 
@@ -94,6 +133,11 @@ python -m triage.model_card
 
 ## Measured results
 
+**How measured.** `python -m triage.train --epochs 6` then `--eval-only`: fine-tuned on the official
+train split (4,708 images), best epoch chosen on the validation split (524 images), evaluated once on
+the official test split. The routing threshold was picked on a stratified half of the test split
+(seed 0) and routing results are reported on the other half.
+
 Held-out set: PneumoniaMNIST official test split, 624 images (234 normal, 390 pneumonia).
 Full details are in [MODEL_CARD.md](MODEL_CARD.md) and `artifacts/metrics.json`.
 
@@ -123,6 +167,15 @@ cases at 92.8% accuracy, because PneumoniaMNIST's validation split is easier tha
 Tests: 20 pytest tests (routing, audit log, summary with a fake Bedrock client, model inference on
 the bundled images, and a Streamlit UI run). CI also scans the full git history with gitleaks.
 
+## Limits
+
+- 64x64 images from one pediatric center. Results do not carry over to adults, other hospitals or
+  full-resolution images.
+- The model is overconfident on some normal X-rays: 47 of 234 normal test images were called
+  pneumonia. With the routing threshold, 38 of those 47 go to review and 9 are auto-triaged.
+- No probability calibration and no subgroup analysis (the dataset has no demographic fields).
+- The audit log is a local SQLite file and the reviewer name is free text.
+
 ## Data and licenses
 
 - PneumoniaMNIST (MedMNIST v2), CC BY 4.0. Source images from Kermany et al., Cell 2018, CC BY 4.0.
@@ -130,7 +183,7 @@ the bundled images, and a Streamlit UI run). CI also scans the full git history 
 - ImageNet-pretrained ResNet18 weights from torchvision.
 - Code: MIT, see [LICENSE](LICENSE).
 
-## What's planned
+## What's next
 
 - Probability calibration (temperature scaling) so confidence is closer to real accuracy.
 - Higher resolution input (128 or 224) and a comparison against the 64x64 model.
