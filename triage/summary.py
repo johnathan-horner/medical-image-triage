@@ -15,12 +15,12 @@ from pathlib import Path
 
 from triage.config import DISCLAIMER, ROOT, ROUTE_AUTO
 
-# Claude Sonnet 4.6 through a US cross-region inference profile. Override with TRIAGE_BEDROCK_MODEL.
-BEDROCK_MODEL = os.environ.get("TRIAGE_BEDROCK_MODEL", "us.anthropic.claude-sonnet-4-6")
+# Claude Haiku 4.5 through the US cross-region inference profile. Override with TRIAGE_BEDROCK_MODEL.
+BEDROCK_MODEL = os.environ.get("TRIAGE_BEDROCK_MODEL", "us.anthropic.claude-haiku-4-5-20251001-v1:0")
 BEDROCK_REGION = os.environ.get("AWS_REGION", "us-east-1")
 COST_LOG = ROOT / "llm_cost_log.csv"
-# USD per million tokens (Claude Sonnet 4.6 on-demand price). Used to estimate cost per call.
-PRICE_IN, PRICE_OUT = 3.00, 15.00
+# USD per million tokens (Claude Haiku 4.5, us.* inference profile, on-demand). Used to estimate cost per call.
+PRICE_IN, PRICE_OUT = 1.10, 5.50
 
 SYSTEM_PROMPT = (
     "You write a two-sentence note for a chest X-ray worklist about an image classifier's output. "
@@ -64,24 +64,36 @@ def with_disclaimer(text: str) -> str:
     return f"{text.strip()} {DISCLAIMER}"
 
 
-def check_aws_account() -> None:
+def check_aws_account(aws: dict | None = None) -> None:
     """If EXPECTED_AWS_ACCOUNT is set, refuse to call AWS from any other account."""
     expected = os.environ.get("EXPECTED_AWS_ACCOUNT")
     if not expected:
         return
     import boto3
 
-    actual = boto3.client("sts", region_name=BEDROCK_REGION).get_caller_identity()["Account"]
+    keys = {}
+    if aws:
+        keys = {"aws_access_key_id": aws["access_key_id"], "aws_secret_access_key": aws["secret_access_key"]}
+    region = (aws or {}).get("region") or BEDROCK_REGION
+    actual = boto3.client("sts", region_name=region, **keys).get_caller_identity()["Account"]
     if actual != expected:
         raise RuntimeError(f"AWS account {actual} is not the expected account {expected}")
 
 
+def make_client(aws: dict | None = None):
+    """Bedrock client from explicit keys ({access_key_id, secret_access_key, region}) or the default chain."""
+    check_aws_account(aws)
+    from anthropic import AnthropicBedrock
+
+    if aws:
+        return AnthropicBedrock(aws_access_key=aws["access_key_id"], aws_secret_key=aws["secret_access_key"],
+                                aws_region=aws.get("region") or BEDROCK_REGION)
+    return AnthropicBedrock(aws_region=BEDROCK_REGION)
+
+
 def bedrock_summary(payload: dict, client=None) -> Summary:
     if client is None:
-        check_aws_account()
-        from anthropic import AnthropicBedrock
-
-        client = AnthropicBedrock(aws_region=BEDROCK_REGION)
+        client = make_client()
     response = client.messages.create(
         model=BEDROCK_MODEL,
         max_tokens=300,

@@ -52,3 +52,18 @@ def test_cost_log_written(tmp_path):
     lines = path.read_text().splitlines()
     assert lines[0].startswith("timestamp,model")
     assert len(lines) == 3
+
+
+def test_default_model_is_haiku_45():
+    assert S.BEDROCK_MODEL == "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+
+
+def test_make_client_uses_keys_from_secrets(monkeypatch):
+    import anthropic
+
+    seen = {}
+    monkeypatch.delenv("EXPECTED_AWS_ACCOUNT", raising=False)
+    monkeypatch.setattr(anthropic, "AnthropicBedrock", lambda **kw: seen.update(kw) or "client")
+    aws = {"access_key_id": "FAKEKEYID000", "secret_access_key": "fake-secret", "region": "us-east-1"}
+    assert S.make_client(aws) == "client"
+    assert seen == {"aws_access_key": "FAKEKEYID000", "aws_secret_key": "fake-secret", "aws_region": "us-east-1"}
