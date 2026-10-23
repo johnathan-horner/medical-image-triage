@@ -1,0 +1,140 @@
+{
+  "model_version": "resnet18-pneumoniamnist64-v1",
+  "image_size": 64,
+  "generated_at": "2026-10-23T16:18:14+00:00",
+  "training": {
+    "epochs": 6,
+    "batch_size": 64,
+    "lr": 0.0003,
+    "seed": 42,
+    "history": [
+      {
+        "epoch": 1,
+        "train_loss": 0.0816,
+        "val_auc": 0.996,
+        "val_accuracy": 0.9466,
+        "seconds": 393.1
+      },
+      {
+        "epoch": 2,
+        "train_loss": 0.0418,
+        "val_auc": 0.9969,
+        "val_accuracy": 0.9695,
+        "seconds": 348.5
+      },
+      {
+        "epoch": 3,
+        "train_loss": 0.0384,
+        "val_auc": 0.997,
+        "val_accuracy": 0.979,
+        "seconds": 300.4
+      },
+      {
+        "epoch": 4,
+        "train_loss": 0.0234,
+        "val_auc": 0.9975,
+        "val_accuracy": 0.979,
+        "seconds": 336.2
+      },
+      {
+        "epoch": 5,
+        "train_loss": 0.0188,
+        "val_auc": 0.9978,
+        "val_accuracy": 0.9809,
+        "seconds": 313.9
+      },
+      {
+        "epoch": 6,
+        "train_loss": 0.0146,
+        "val_auc": 0.9979,
+        "val_accuracy": 0.979,
+        "seconds": 250.7
+      }
+    ]
+  },
+  "test_set": {
+    "name": "PneumoniaMNIST test split",
+    "cases": 624,
+    "normal": 234,
+    "pneumonia": 390
+  },
+  "test_metrics": {
+    "accuracy": 0.9215,
+    "precision_pneumonia": 0.892,
+    "recall_pneumonia": 0.9949,
+    "f1_pneumonia": 0.9406,
+    "specificity": 0.7991,
+    "roc_auc": 0.9822
+  },
+  "confusion_matrix": {
+    "labels": [
+      "normal",
+      "pneumonia"
+    ],
+    "rows_true_cols_pred": [
+      [
+        187,
+        47
+      ],
+      [
+        2,
+        388
+      ]
+    ]
+  },
+  "routing": {
+    "threshold": 0.9903,
+    "target_accuracy": 0.98,
+    "threshold_source": "calibration half of the test split (312 images, stratified, seed 0): lowest confidence threshold with >= 98% accuracy on auto-triaged cases",
+    "calibration_half": {
+      "threshold": 0.9903,
+      "auto_triage": {
+        "cases": 241,
+        "share": 0.7724,
+        "accuracy": 0.9834,
+        "missed_pneumonia": 0
+      },
+      "human_review": {
+        "cases": 71,
+        "share": 0.2276,
+        "accuracy": 0.7042,
+        "missed_pneumonia": 2
+      }
+    },
+    "evaluation_half": {
+      "threshold": 0.9903,
+      "auto_triage": {
+        "cases": 240,
+        "share": 0.7692,
+        "accuracy": 0.9792,
+        "missed_pneumonia": 0
+      },
+      "human_review": {
+        "cases": 72,
+        "share": 0.2308,
+        "accuracy": 0.7361,
+        "missed_pneumonia": 0
+      }
+    },
+    "validation_reference": {
+      "note": "threshold picked on the validation split instead, shown for comparison; it auto-triages almost everything because validation is easier than test",
+      "threshold": 0.5527,
+      "evaluation_half": {
+        "threshold": 0.5527,
+        "auto_triage": {
+          "cases": 306,
+          "share": 0.9808,
+          "accuracy": 0.9281,
+          "missed_pneumonia": 0
+        },
+        "human_review": {
+          "cases": 6,
+          "share": 0.0192,
+          "accuracy": 0.6667,
+          "missed_pneumonia": 0
+        }
+      }
+    }
+  },
+  "wall_clock_seconds": 18.4
+}
