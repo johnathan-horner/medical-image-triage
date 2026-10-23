@@ -102,7 +102,7 @@ so the app and tests run without downloading the dataset.
 
 ## How to run
 
-Python 3.11 to 3.13. On Linux, requirements.txt installs CPU-only PyTorch 2.6; on macOS it pins PyTorch 2.2.2, the last version with Intel Mac wheels.
+Python 3.10 to 3.13. On Linux, requirements.txt installs CPU-only PyTorch 2.6; on macOS it pins PyTorch 2.2.2, the last version with Intel Mac wheels.
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
