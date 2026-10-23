@@ -102,11 +102,11 @@ so the app and tests run without downloading the dataset.
 
 ## How to run
 
-Python 3.11. PyTorch 2.2.2 is pinned because it is the last version with Intel Mac wheels.
+Python 3.11 to 3.13. On Linux, requirements.txt installs CPU-only PyTorch 2.6; on macOS it pins PyTorch 2.2.2, the last version with Intel Mac wheels.
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
-pip install -r requirements-dev.txt --extra-index-url https://download.pytorch.org/whl/cpu
+pip install -r requirements-dev.txt
 streamlit run app.py
 pytest
 ```
@@ -126,7 +126,7 @@ to `llm_cost_log.csv`.
 Retrain and re-evaluate (downloads PneumoniaMNIST, about 20 MB; took 34 minutes on a 2-core laptop):
 
 ```bash
-pip install -r requirements-train.txt --extra-index-url https://download.pytorch.org/whl/cpu
+pip install -r requirements-train.txt
 python -m triage.train --epochs 6
 python -m triage.model_card
 ```

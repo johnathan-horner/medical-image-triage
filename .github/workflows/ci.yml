@@ -15,7 +15,7 @@ jobs:
           python-version: "3.11"
           cache: pip
       - name: Install
-        run: pip install -r requirements-dev.txt --extra-index-url https://download.pytorch.org/whl/cpu
+        run: pip install -r requirements-dev.txt
       - name: Lint
         run: ruff check triage tests app.py
       - name: Test
