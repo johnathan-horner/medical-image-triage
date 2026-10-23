@@ -1,6 +1,10 @@
-# App and tests.
+# App and tests. Works on Python 3.9 to 3.13.
 # Linux (Streamlit Cloud, CI): CPU-only PyTorch wheels by direct URL, so the CUDA build is never pulled.
 # macOS: torch 2.2.2, the last release with Intel Mac wheels (needs NumPy 1.x).
+torch @ https://download.pytorch.org/whl/cpu/torch-2.6.0%2Bcpu-cp39-cp39-linux_x86_64.whl ; sys_platform == "linux" and python_version == "3.9"
+torchvision @ https://download.pytorch.org/whl/cpu/torchvision-0.21.0%2Bcpu-cp39-cp39-linux_x86_64.whl ; sys_platform == "linux" and python_version == "3.9"
+torch @ https://download.pytorch.org/whl/cpu/torch-2.6.0%2Bcpu-cp310-cp310-linux_x86_64.whl ; sys_platform == "linux" and python_version == "3.10"
+torchvision @ https://download.pytorch.org/whl/cpu/torchvision-0.21.0%2Bcpu-cp310-cp310-linux_x86_64.whl ; sys_platform == "linux" and python_version == "3.10"
 torch @ https://download.pytorch.org/whl/cpu/torch-2.6.0%2Bcpu-cp311-cp311-linux_x86_64.whl ; sys_platform == "linux" and python_version == "3.11"
 torchvision @ https://download.pytorch.org/whl/cpu/torchvision-0.21.0%2Bcpu-cp311-cp311-linux_x86_64.whl ; sys_platform == "linux" and python_version == "3.11"
 torch @ https://download.pytorch.org/whl/cpu/torch-2.6.0%2Bcpu-cp312-cp312-linux_x86_64.whl ; sys_platform == "linux" and python_version == "3.12"
@@ -10,10 +14,10 @@ torchvision @ https://download.pytorch.org/whl/cpu/torchvision-0.21.0%2Bcpu-cp31
 torch==2.2.2 ; sys_platform == "darwin"
 torchvision==0.17.2 ; sys_platform == "darwin"
 numpy==1.26.4 ; sys_platform == "darwin"
-numpy==2.1.3 ; sys_platform != "darwin"
-pillow==13.0.0
-pandas==3.0.6
-streamlit==1.66.1
-anthropic[bedrock]==2.2.0
-boto3==1.43.118
-pyarrow==20.0.0
+numpy>=1.26,<2.3 ; sys_platform != "darwin"
+pillow>=10.4,<14
+pandas>=2.2,<4
+streamlit>=1.40,<1.67
+anthropic[bedrock]>=0.49,<3
+boto3>=1.34
+pyarrow>=16,<21
