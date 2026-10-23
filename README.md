@@ -59,7 +59,8 @@ step logged and every result clearly labeled as decision support.
 - **Guardrails:** the LLM sees only the model's numbers and route, never the image; a template takes
   over if Bedrock is unavailable; every result carries "Decision support only, not a diagnosis.";
   the audit log is append-only.
-- **Cost:** CPU training and about $0.0015 per LLM summary on Claude Sonnet 4.6 through Bedrock.
+- **Cost:** CPU training and about $0.0005 per LLM summary on Claude Haiku 4.5 through Bedrock;
+  the hosted app allows 10 LLM summaries per browser session.
 
 **Results.** On the held-out test split: 92.1% accuracy, 99.5% recall for pneumonia, 79.9%
 specificity. With the routing threshold, 76.9% of cases were auto-triaged at 97.9% accuracy with no
@@ -111,17 +112,28 @@ streamlit run app.py
 pytest
 ```
 
-LLM summaries (optional, needs AWS credentials with Bedrock access):
+LLM summaries (optional). On Streamlit Cloud, or locally in `.streamlit/secrets.toml` (never commit
+it), add a key that may only call Claude Haiku 4.5:
+
+```toml
+[aws]
+access_key_id = "YOUR_ACCESS_KEY_ID"
+secret_access_key = "YOUR_SECRET_ACCESS_KEY"
+region = "us-east-1"
+```
+
+Or use your local AWS credentials:
 
 ```bash
 export TRIAGE_USE_BEDROCK=1
 export EXPECTED_AWS_ACCOUNT=123456789012   # optional: refuse to call AWS from any other account
-export TRIAGE_BEDROCK_MODEL=us.anthropic.claude-sonnet-4-6   # default
+export TRIAGE_BEDROCK_MODEL=us.anthropic.claude-haiku-4-5-20251001-v1:0   # default
 streamlit run app.py
 ```
 
-Each summary uses about 160 input and 70 output tokens, roughly $0.0015 per case. Calls are logged
-to `llm_cost_log.csv`.
+Without credentials the toggle is off and a fixed template writes every summary. Measured on
+2026-10-23: about 150 input and 40 to 65 output tokens, USD 0.0004 to 0.0005 per summary. Calls are
+logged to `llm_cost_log.csv`; the app caps LLM summaries at 10 per browser session.
 
 Retrain and re-evaluate (downloads PneumoniaMNIST, about 20 MB; took 34 minutes on a 2-core laptop):
 

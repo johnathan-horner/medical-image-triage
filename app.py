@@ -14,8 +14,28 @@ from triage.audit import AuditLog
 from triage.config import ARTIFACTS, CLASS_NAMES, DISCLAIMER, METRICS_FILE, ROUTE_AUTO, SAMPLES
 from triage.model import Classifier
 from triage.pipeline import load_threshold, triage_case
+from triage.summary import BEDROCK_MODEL, make_client
 
 st.set_page_config(page_title="Chest X-ray Triage Demo", layout="wide")
+
+MAX_LLM_CALLS_PER_SESSION = 10
+
+
+def aws_secrets() -> dict | None:
+    """The [aws] block from Streamlit secrets (access_key_id, secret_access_key, region), or None."""
+    try:
+        aws = st.secrets["aws"]
+        if aws.get("access_key_id") and aws.get("secret_access_key"):
+            return {"access_key_id": aws["access_key_id"], "secret_access_key": aws["secret_access_key"],
+                    "region": aws.get("region") or "us-east-1"}
+    except Exception:
+        pass
+    return None
+
+
+def llm_available() -> bool:
+    # On Streamlit Cloud only the [aws] secrets count; TRIAGE_USE_BEDROCK=1 allows the local default chain.
+    return aws_secrets() is not None or os.environ.get("TRIAGE_USE_BEDROCK") == "1"
 
 
 @st.cache_resource
@@ -68,8 +88,22 @@ def triage_tab(clf: Classifier, audit: AuditLog, threshold: float, use_llm: bool
 
     with right:
         if run and image is not None:
+            used = st.session_state.get("llm_calls", 0)
+            capped = use_llm and used >= MAX_LLM_CALLS_PER_SESSION
+            st.session_state["llm_note"] = (f"Session cap reached ({MAX_LLM_CALLS_PER_SESSION} LLM summaries per "
+                                            "session), so the template wrote this summary." if capped else None)
+            llm = use_llm and not capped
             with st.spinner("Scoring"):
-                st.session_state["last_result"] = triage_case(image, clf, audit, threshold, use_llm, source)
+                client = None
+                if llm:
+                    st.session_state["llm_calls"] = used + 1
+                    try:
+                        client = make_client(aws_secrets())
+                    except Exception as exc:  # noqa: BLE001 - fall back to the template, say why
+                        llm = False
+                        st.session_state["llm_note"] = f"LLM unavailable ({type(exc).__name__}); template summary."
+                st.session_state["last_result"] = triage_case(image, clf, audit, threshold, llm, source,
+                                                              llm_client=client)
             st.rerun()  # refresh the sidebar queue count
         result = st.session_state.get("last_result")
         if result is None:
@@ -88,6 +122,8 @@ def triage_tab(clf: Classifier, audit: AuditLog, threshold: float, use_llm: bool
                        f"< threshold {result.threshold:.1%})")
         st.markdown(f"**Summary** ({result.summary.source})")
         st.write(result.summary.text)
+        if st.session_state.get("llm_note"):
+            st.caption(st.session_state["llm_note"])
         if result.summary.source == "bedrock":
             st.caption(f"{result.summary.input_tokens} input / {result.summary.output_tokens} output tokens, "
                        f"about ${result.summary.cost_usd:.4f}")
@@ -165,9 +201,15 @@ def main() -> None:
         st.markdown(f"**Routing threshold** {threshold:.3f}")
         st.markdown(f"**Waiting for review** {len(audit.review_queue())}")
         reviewer = st.text_input("Reviewer name", value="demo-reviewer")
-        use_llm = st.toggle("LLM summary via Amazon Bedrock", value=os.environ.get("TRIAGE_USE_BEDROCK") == "1",
-                            help="Off: a fixed template writes the summary. On: Claude on Bedrock writes it "
-                                 "from the model output only. Needs AWS credentials.")
+        available = llm_available()
+        use_llm = st.toggle("LLM summary via Amazon Bedrock", value=available, disabled=not available,
+                            help="Off: a fixed template writes the summary. On: Claude Haiku 4.5 on Bedrock writes "
+                                 "it from the model output only.")
+        if available:
+            st.caption(f"Bedrock model `{BEDROCK_MODEL}` · LLM summaries this session: "
+                       f"{st.session_state.get('llm_calls', 0)}/{MAX_LLM_CALLS_PER_SESSION}")
+        else:
+            st.caption("No AWS credentials are set for this app, so a fixed template writes every summary.")
 
     tabs = st.tabs(["Triage a case", "Review queue", "Audit log", "Model evaluation"])
     with tabs[0]:

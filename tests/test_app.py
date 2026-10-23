@@ -16,3 +16,14 @@ def test_app_runs_a_case(tmp_path, monkeypatch):
     assert not at.exception
     assert any(DISCLAIMER in m.value for m in list(at.markdown) + list(at.caption))
     assert at.subheader[0].value.startswith("Case case-")
+
+
+def test_llm_toggle_is_off_without_aws_secrets(monkeypatch):
+    from streamlit.testing.v1 import AppTest
+
+    monkeypatch.delenv("TRIAGE_USE_BEDROCK", raising=False)
+    at = AppTest.from_file(str(Path(__file__).resolve().parent.parent / "app.py"), default_timeout=120).run()
+    assert not at.exception
+    toggle = at.sidebar.toggle[0]
+    assert toggle.value is False and toggle.disabled is True
+    assert any("No AWS credentials" in c.value for c in at.sidebar.caption)
