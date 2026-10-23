@@ -1,659 +1,183 @@
-import streamlit as st
-import requests
-import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
-from PIL import Image
-import base64
-import io
-import os
-import hashlib
-from datetime import datetime, timedelta
+"""Streamlit demo: score a chest X-ray, route it, summarize it, and log every step."""
+
+from __future__ import annotations
+
+import csv
 import json
-import time
+import os
 
-# Page configuration
-st.set_page_config(
-    page_title="Medical Image Triage System",
-    page_icon="🏥",
-    layout="wide"
-)
+import pandas as pd
+import streamlit as st
+from PIL import Image
 
-# API Configuration
-API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
+from triage.audit import AuditLog
+from triage.config import ARTIFACTS, CLASS_NAMES, DISCLAIMER, METRICS_FILE, ROUTE_AUTO, SAMPLES
+from triage.model import Classifier
+from triage.pipeline import load_threshold, triage_case
 
-# Mock Data for Demo Mode
-MOCK_RESPONSES = {
-    "normal_triage": {
-        "prediction_id": "pred-12345-normal",
-        "classification": {
-            "predicted_class": "No Finding",
-            "confidence": 0.94,
-            "confidence_level": "high",
-            "all_scores": {
-                "No Finding": 0.94,
-                "Pneumonia": 0.03,
-                "Pneumothorax": 0.01,
-                "Infiltration": 0.01,
-                "Mass": 0.01
-            }
-        },
-        "triage": {
-            "decision": "auto_triage",
-            "priority_level": 1,
-            "estimated_review_time": 0,
-            "assigned_reviewer_type": "auto_approved",
-            "reasoning": "No significant findings detected with high confidence (94%). Image shows normal chest anatomy. Auto-approved per clinical protocols."
-        },
-        "timestamp": datetime.now().isoformat(),
-        "processing_time_ms": 187.3,
-        "model_version": "1.2.1",
-        "image_hash": "abc123normal"
-    },
-    "pneumonia_triage": {
-        "prediction_id": "pred-67890-pneumonia",
-        "classification": {
-            "predicted_class": "Pneumonia",
-            "confidence": 0.87,
-            "confidence_level": "medium",
-            "all_scores": {
-                "No Finding": 0.08,
-                "Pneumonia": 0.87,
-                "Pneumothorax": 0.02,
-                "Infiltration": 0.02,
-                "Mass": 0.01
-            }
-        },
-        "triage": {
-            "decision": "expedited_review",
-            "priority_level": 2,
-            "estimated_review_time": 15,
-            "assigned_reviewer_type": "radiologist",
-            "reasoning": "Predicted Pneumonia with 87% confidence. Infectious condition requiring prompt medical attention. Medium confidence requires expedited physician review within 15 minutes."
-        },
-        "timestamp": datetime.now().isoformat(),
-        "processing_time_ms": 234.7,
-        "model_version": "1.2.1",
-        "image_hash": "def456pneumonia"
-    },
-    "cardiomegaly_triage": {
-        "prediction_id": "pred-11111-cardio",
-        "classification": {
-            "predicted_class": "Cardiomegaly",
-            "confidence": 0.62,
-            "confidence_level": "low",
-            "all_scores": {
-                "No Finding": 0.25,
-                "Pneumonia": 0.05,
-                "Pneumothorax": 0.03,
-                "Infiltration": 0.05,
-                "Cardiomegaly": 0.62
-            }
-        },
-        "triage": {
-            "decision": "senior_review",
-            "priority_level": 3,
-            "estimated_review_time": 45,
-            "assigned_reviewer_type": "senior_radiologist",
-            "reasoning": "Suspected Cardiomegaly with moderate confidence (62%). Cardiac abnormality requires senior radiologist evaluation. Low confidence score mandates expert review within 45 minutes."
-        },
-        "timestamp": datetime.now().isoformat(),
-        "processing_time_ms": 298.1,
-        "model_version": "1.2.1",
-        "image_hash": "ghi789cardio"
-    },
-    "audit_trail": [
-        {"image_hash": "abc123normal", "classification": "No Finding", "confidence": 0.94, "routing_decision": "Auto-Approved", "reviewer": "AI System", "timestamp": "2024-01-15 14:30:22"},
-        {"image_hash": "def456pneumonia", "classification": "Pneumonia", "confidence": 0.87, "routing_decision": "Expedited Review", "reviewer": "Dr. Smith", "timestamp": "2024-01-15 14:15:10"},
-        {"image_hash": "ghi789cardio", "classification": "Cardiomegaly", "confidence": 0.62, "routing_decision": "Senior Review", "reviewer": "Dr. Johnson", "timestamp": "2024-01-15 13:45:33"},
-        {"image_hash": "jkl012normal2", "classification": "No Finding", "confidence": 0.91, "routing_decision": "Auto-Approved", "reviewer": "AI System", "timestamp": "2024-01-15 13:22:18"},
-        {"image_hash": "mno345infiltrate", "classification": "Infiltration", "confidence": 0.78, "routing_decision": "Expedited Review", "reviewer": "Dr. Brown", "timestamp": "2024-01-15 12:58:44"},
-        {"image_hash": "pqr678pneumo", "classification": "Pneumothorax", "confidence": 0.89, "routing_decision": "Expedited Review", "reviewer": "Dr. Davis", "timestamp": "2024-01-15 12:35:27"},
-        {"image_hash": "stu901mass", "classification": "Mass", "confidence": 0.73, "routing_decision": "Expedited Review", "reviewer": "Dr. Wilson", "timestamp": "2024-01-15 11:42:15"},
-        {"image_hash": "vwx234normal3", "classification": "No Finding", "confidence": 0.96, "routing_decision": "Auto-Approved", "reviewer": "AI System", "timestamp": "2024-01-15 11:28:09"},
-        {"image_hash": "yza567pneumonia2", "classification": "Pneumonia", "confidence": 0.84, "routing_decision": "Expedited Review", "reviewer": "Dr. Lee", "timestamp": "2024-01-15 10:55:31"},
-        {"image_hash": "bcd890normal4", "classification": "No Finding", "confidence": 0.93, "routing_decision": "Auto-Approved", "reviewer": "AI System", "timestamp": "2024-01-15 10:33:42"},
-        {"image_hash": "efg123cardio2", "classification": "Cardiomegaly", "confidence": 0.58, "routing_decision": "Senior Review", "reviewer": "Dr. Martinez", "timestamp": "2024-01-14 16:20:55"},
-        {"image_hash": "hij456infiltrate2", "classification": "Infiltration", "confidence": 0.81, "routing_decision": "Expedited Review", "reviewer": "Dr. Taylor", "timestamp": "2024-01-14 15:47:12"},
-        {"image_hash": "klm789normal5", "classification": "No Finding", "confidence": 0.97, "routing_decision": "Auto-Approved", "reviewer": "AI System", "timestamp": "2024-01-14 15:13:28"},
-        {"image_hash": "nop012pneumo2", "classification": "Pneumothorax", "confidence": 0.92, "routing_decision": "Expedited Review", "reviewer": "Dr. Anderson", "timestamp": "2024-01-14 14:39:44"},
-        {"image_hash": "qrs345normal6", "classification": "No Finding", "confidence": 0.89, "routing_decision": "Auto-Approved", "reviewer": "AI System", "timestamp": "2024-01-14 14:16:17"},
-        {"image_hash": "tuv678mass2", "classification": "Mass", "confidence": 0.69, "routing_decision": "Senior Review", "reviewer": "Dr. Thompson", "timestamp": "2024-01-14 13:52:33"},
-        {"image_hash": "wxy901pneumonia3", "classification": "Pneumonia", "confidence": 0.86, "routing_decision": "Expedited Review", "reviewer": "Dr. Garcia", "timestamp": "2024-01-14 13:28:09"},
-        {"image_hash": "zab234normal7", "classification": "No Finding", "confidence": 0.95, "routing_decision": "Auto-Approved", "reviewer": "AI System", "timestamp": "2024-01-14 12:45:21"},
-        {"image_hash": "cde567infiltrate3", "classification": "Infiltration", "confidence": 0.77, "routing_decision": "Expedited Review", "reviewer": "Dr. White", "timestamp": "2024-01-14 12:22:48"},
-        {"image_hash": "fgh890cardio3", "classification": "Cardiomegaly", "confidence": 0.61, "routing_decision": "Senior Review", "reviewer": "Dr. Clark", "timestamp": "2024-01-14 11:58:14"}
-    ],
-    "dashboard": {
-        "metrics": {
-            "total_images": 1247,
-            "avg_confidence": 0.84,
-            "images_today": 89,
-            "drift_status": "Warning"
-        },
-        "classification_counts": [
-            {"classification": "No Finding", "count": 750},
-            {"classification": "Pneumonia", "count": 198},
-            {"classification": "Infiltration", "count": 156},
-            {"classification": "Pneumothorax", "count": 87},
-            {"classification": "Mass", "count": 43},
-            {"classification": "Cardiomegaly", "count": 13}
-        ],
-        "confidence_over_time": [
-            {"timestamp": "2024-01-14 08:00", "avg_confidence": 0.86},
-            {"timestamp": "2024-01-14 12:00", "avg_confidence": 0.84},
-            {"timestamp": "2024-01-14 16:00", "avg_confidence": 0.82},
-            {"timestamp": "2024-01-14 20:00", "avg_confidence": 0.81},
-            {"timestamp": "2024-01-15 00:00", "avg_confidence": 0.83},
-            {"timestamp": "2024-01-15 04:00", "avg_confidence": 0.85},
-            {"timestamp": "2024-01-15 08:00", "avg_confidence": 0.84},
-            {"timestamp": "2024-01-15 12:00", "avg_confidence": 0.83}
-        ],
-        "routing_distribution": [
-            {"decision": "Auto-Approved", "count": 847, "percentage": 68},
-            {"decision": "Expedited Review", "count": 274, "percentage": 22},
-            {"decision": "Senior Review", "count": 126, "percentage": 10}
-        ]
-    }
-}
+st.set_page_config(page_title="Chest X-ray Triage Demo", layout="wide")
 
-# Sample image paths for demo mode
-SAMPLE_IMAGES = {
-    "Normal": "samples/normal_chest_xray.png",
-    "Pneumonia": "samples/pneumonia_chest_xray.png",
-    "Cardiomegaly": "samples/cardiomegaly_chest_xray.png"
-}
 
-def image_to_base64(image):
-    """Convert PIL image to base64 string"""
-    buffered = io.BytesIO()
-    image.save(buffered, format="PNG")
-    return base64.b64encode(buffered.getvalue()).decode()
+@st.cache_resource
+def get_classifier() -> Classifier:
+    return Classifier()
 
-def make_api_call(endpoint, data=None, demo_mode=False, mock_key=None):
-    """Make API call with fallback to mock data in demo mode"""
-    if demo_mode and mock_key:
-        # Simulate API delay
-        time.sleep(1.0)
-        return MOCK_RESPONSES.get(mock_key, {})
 
-    try:
-        if data:
-            response = requests.post(f"{API_BASE_URL}/{endpoint}", json=data, timeout=30)
+@st.cache_resource
+def get_audit() -> AuditLog:
+    return AuditLog(os.environ.get("TRIAGE_AUDIT_DB", "audit_log.sqlite3"))
+
+
+@st.cache_data
+def get_metrics() -> dict:
+    return json.loads(METRICS_FILE.read_text())
+
+
+@st.cache_data
+def get_samples() -> list[dict]:
+    with (SAMPLES / "labels.csv").open() as f:
+        return list(csv.DictReader(f))
+
+
+def route_badge(route: str) -> str:
+    return "Auto-triage" if route == ROUTE_AUTO else "Human review queue"
+
+
+def triage_tab(clf: Classifier, audit: AuditLog, threshold: float, use_llm: bool) -> None:
+    samples = get_samples()
+    left, right = st.columns([1, 2])
+    with left:
+        choice = st.radio("Image source", ["Bundled test image", "Upload"], horizontal=True)
+        image, source, truth = None, "", None
+        if choice == "Bundled test image":
+            names = [s["file"] for s in samples]
+            name = st.selectbox("PneumoniaMNIST test image", names)
+            image = Image.open(SAMPLES / name)
+            source = f"sample:{name}"
+            truth = next(s["true_label"] for s in samples if s["file"] == name)
         else:
-            response = requests.get(f"{API_BASE_URL}/{endpoint}", timeout=10)
-        response.raise_for_status()
-        return response.json()
-    except requests.exceptions.RequestException as e:
-        st.error(f"API Connection Error: {e}")
-        st.info("💡 **Tip**: Start the backend server or enable Demo Mode in the sidebar")
-        return None
+            upload = st.file_uploader("Chest X-ray (PNG or JPEG)", type=["png", "jpg", "jpeg"])
+            if upload:
+                image = Image.open(upload)
+                source = f"upload:{upload.name}"
+        if image is not None:
+            st.image(image.convert("L").resize((256, 256)), caption=source, width=256)
+            if truth:
+                st.caption(f"Dataset label (hidden from the model): {truth}")
+        run = st.button("Run triage", type="primary", disabled=image is None)
 
-def render_sidebar():
-    """Render sidebar with project info and controls"""
+    with right:
+        if run and image is not None:
+            with st.spinner("Scoring"):
+                st.session_state["last_result"] = triage_case(image, clf, audit, threshold, use_llm, source)
+            st.rerun()  # refresh the sidebar queue count
+        result = st.session_state.get("last_result")
+        if result is None:
+            st.info("Pick an image and press Run triage.")
+            return
+        st.subheader(f"Case {result.case_id}")
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Model leaning", result.label)
+        c2.metric("Pneumonia probability", f"{result.pneumonia_probability:.1%}")
+        c3.metric("Confidence", f"{result.confidence:.1%}", help="max(p, 1 - p)")
+        if result.route == ROUTE_AUTO:
+            st.success(f"Route: {route_badge(result.route)} (confidence {result.confidence:.1%} "
+                       f">= threshold {result.threshold:.1%})")
+        else:
+            st.warning(f"Route: {route_badge(result.route)} (confidence {result.confidence:.1%} "
+                       f"< threshold {result.threshold:.1%})")
+        st.markdown(f"**Summary** ({result.summary.source})")
+        st.write(result.summary.text)
+        if result.summary.source == "bedrock":
+            st.caption(f"{result.summary.input_tokens} input / {result.summary.output_tokens} output tokens, "
+                       f"about ${result.summary.cost_usd:.4f}")
+        st.caption(f"Model version {result.model_version}. {DISCLAIMER}")
+
+
+def review_tab(audit: AuditLog, reviewer: str) -> None:
+    queue = audit.review_queue()
+    st.write(f"{len(queue)} case(s) waiting for review.")
+    for case in queue:
+        with st.container(border=True):
+            cols = st.columns([1, 3])
+            src = case["source"] or ""
+            if src.startswith("sample:"):
+                cols[0].image(Image.open(SAMPLES / src.split(":", 1)[1]).resize((160, 160)))
+            cols[1].markdown(f"**{case['case_id']}**  model leans **{case['predicted_label']}**, "
+                             f"p(pneumonia) {case['score']:.1%}, confidence {case['confidence']:.1%}")
+            label = cols[1].radio("Reviewer label", CLASS_NAMES, key=f"lbl-{case['case_id']}", horizontal=True,
+                                  index=CLASS_NAMES.index(case["predicted_label"]))
+            if cols[1].button("Submit review", key=f"btn-{case['case_id']}"):
+                action = audit.record_review(case["case_id"], reviewer, label)
+                st.toast(f"{case['case_id']}: {action}")
+                st.rerun()
+
+
+def audit_tab(audit: AuditLog) -> None:
+    events = pd.DataFrame(audit.events())
+    if events.empty:
+        st.info("No cases yet.")
+        return
+    st.dataframe(events, width="stretch", hide_index=True)
+    st.download_button("Download CSV", events.to_csv(index=False), "audit_log.csv", "text/csv")
+
+
+def evaluation_tab(metrics: dict) -> None:
+    m = metrics["test_metrics"]
+    ts = metrics["test_set"]
+    st.markdown(f"Held-out set: **{ts['name']}**, {ts['cases']} images "
+                f"({ts['normal']} normal, {ts['pneumonia']} pneumonia). Threshold 0.5 on p(pneumonia).")
+    cols = st.columns(5)
+    for col, (k, label) in zip(cols, [("accuracy", "Accuracy"), ("precision_pneumonia", "Precision"),
+                                      ("recall_pneumonia", "Recall"), ("specificity", "Specificity"),
+                                      ("roc_auc", "ROC AUC")]):
+        col.metric(label, f"{m[k]:.3f}")
+    left, right = st.columns(2)
+    left.image(str(ARTIFACTS / "confusion_matrix.png"), width=360)
+    r = metrics["routing"]
+    right.markdown(f"**Routing threshold: {r['threshold']:.3f}** on confidence  \n{r['threshold_source']}. "
+                   "Routing results below are on the other half of the test split, which played no part "
+                   "in picking the threshold.")
+    rows = []
+    for name, rep in (("test calibration half", r["calibration_half"]), ("test evaluation half", r["evaluation_half"])):
+        for lane in ("auto_triage", "human_review"):
+            d = rep[lane]
+            rows.append({"data": name, "lane": lane, "cases": d["cases"], "share": d["share"],
+                         "accuracy": d["accuracy"], "missed pneumonia": d["missed_pneumonia"]})
+    right.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
+    ref = r["validation_reference"]
+    right.caption(f"For comparison, a threshold picked on the validation split ({ref['threshold']:.3f}) would "
+                  f"auto-triage {ref['evaluation_half']['auto_triage']['share']:.0%} of the evaluation half at "
+                  f"{ref['evaluation_half']['auto_triage']['accuracy']:.1%} accuracy.")
+    if metrics.get("training"):
+        st.markdown("**Training history (CPU)**")
+        st.dataframe(pd.DataFrame(metrics["training"]["history"]), hide_index=True)
+
+
+def main() -> None:
+    st.title("Chest X-ray Triage Demo")
+    st.error(DISCLAIMER + " Research demo on a public dataset. Not for clinical use.")
+    clf, audit, metrics = get_classifier(), get_audit(), get_metrics()
+    threshold = load_threshold()
+
     with st.sidebar:
-        st.title("🏥 Medical Image Triage")
-
-        # Demo Mode Toggle
-        demo_mode = st.checkbox("Demo Mode", value=True, help="Use mock data for demonstration without backend")
-
-        st.markdown("---")
-
-        # Project Description
-        with st.expander("📖 System Overview"):
-            st.markdown("""
-            **AI-Powered Medical Image Classification & Triage**
-
-            Production-grade system featuring:
-            - EfficientNetB0 deep learning model
-            - Intelligent confidence-based routing
-            - HIPAA compliant architecture
-            - Real-time drift detection
-
-            **Triage Logic:**
-            - **High confidence (>90%)**: Auto-approve
-            - **Medium confidence (70-90%)**: Expedited physician review
-            - **Low confidence (<70%)**: Senior radiologist queue
-
-            **Classifications:**
-            Normal, Pneumonia, Pneumothorax, Infiltration, Mass, Cardiomegaly
-            """)
-
-        # Architecture Diagram
-        st.image("docs/Medical_Image_Triage_AWS_Architecture.png",
-                caption="AWS Architecture", use_container_width=True)
-
-        # Tech Stack
-        st.markdown("**Tech Stack:**")
-        col1, col2 = st.columns(2)
-        with col1:
-            st.image("https://img.shields.io/badge/TensorFlow-FF6F00?style=flat&logo=tensorflow&logoColor=white", use_container_width=True)
-            st.image("https://img.shields.io/badge/FastAPI-009688?style=flat&logo=fastapi&logoColor=white", use_container_width=True)
-        with col2:
-            st.image("https://img.shields.io/badge/AWS-232F3E?style=flat&logo=amazon-aws&logoColor=white", use_container_width=True)
-            st.image("https://img.shields.io/badge/HIPAA-4CAF50?style=flat&logo=security&logoColor=white", use_container_width=True)
-
-        # How it works
-        with st.expander("🔬 How It Works"):
-            st.markdown("""
-            1. **Image Upload** → DICOM/PNG/JPEG processing
-            2. **AI Classification** → EfficientNetB0 model inference
-            3. **Confidence Analysis** → Uncertainty quantification
-            4. **Intelligent Routing** → Priority-based assignment
-            """)
-
-        # HIPAA Compliance
-        st.markdown("---")
-        st.markdown("**🔒 HIPAA Compliant**")
-        st.success("✅ No raw images stored")
-        st.success("✅ SHA256 hash identification")
-        st.success("✅ Complete audit trails")
-        st.success("✅ 7-year retention policy")
-
-        # GitHub Link
-        st.markdown("---")
-        st.markdown("**[📁 View on GitHub](https://github.com/johnathanhorner/medical-image-triage)**")
-
-        # Footer
-        st.markdown("---")
-        st.markdown("**Built by Johnathan Horner**")
-
-    return demo_mode
-
-def render_triage_tab(demo_mode):
-    """Render the Triage tab"""
-    st.header("🩻 Medical Image Triage")
-
-    col1, col2 = st.columns([1, 1])
-
-    with col1:
-        st.subheader("Upload Medical Image")
-
-        # Demo mode sample selector
-        if demo_mode:
-            st.info("🎯 **Demo Mode**: Select a sample image or upload your own")
-            sample_choice = st.selectbox(
-                "Choose Sample Image:",
-                ["Upload Custom", "Normal Chest X-ray", "Pneumonia Case", "Cardiomegaly Case"]
-            )
-
-            if sample_choice != "Upload Custom":
-                # Load sample image
-                sample_mapping = {
-                    "Normal Chest X-ray": "Normal",
-                    "Pneumonia Case": "Pneumonia",
-                    "Cardiomegaly Case": "Cardiomegaly"
-                }
-                sample_key = sample_mapping[sample_choice]
-
-                try:
-                    sample_path = SAMPLE_IMAGES[sample_key]
-                    if os.path.exists(sample_path):
-                        uploaded_file = sample_path
-                        st.success(f"Loaded sample: {sample_choice}")
-                    else:
-                        st.error("Sample image not found")
-                        uploaded_file = None
-                except:
-                    st.error("Error loading sample image")
-                    uploaded_file = None
-            else:
-                uploaded_file = st.file_uploader(
-                    "Choose image file",
-                    type=['png', 'jpg', 'jpeg', 'dicom'],
-                    help="Supported: PNG, JPEG, DICOM formats"
-                )
-        else:
-            uploaded_file = st.file_uploader(
-                "Choose medical image file",
-                type=['png', 'jpg', 'jpeg', 'dicom'],
-                help="Supported: PNG, JPEG, DICOM formats"
-            )
-
-        # Display uploaded image
-        if uploaded_file is not None:
-            try:
-                if isinstance(uploaded_file, str):
-                    # Sample image path
-                    image = Image.open(uploaded_file)
-                else:
-                    # Uploaded file
-                    image = Image.open(uploaded_file)
-
-                st.image(image, caption="Uploaded Medical Image", use_container_width=True)
-
-                # Triage button
-                if st.button("🔍 Analyze Image", type="primary", use_container_width=True):
-                    with st.spinner("Processing medical image..."):
-                        # Prepare API request
-                        image_base64 = image_to_base64(image)
-
-                        # Generate mock hash for demo
-                        image_hash = hashlib.sha256(image_base64.encode()).hexdigest()[:12]
-
-                        triage_data = {
-                            "image_data": image_base64,
-                            "patient_id": "P12345",
-                            "study_id": "S67890"
-                        }
-
-                        # Determine mock response based on sample choice
-                        mock_key = "normal_triage"  # default
-                        if demo_mode and isinstance(uploaded_file, str):
-                            if "pneumonia" in uploaded_file.lower():
-                                mock_key = "pneumonia_triage"
-                            elif "cardiomegaly" in uploaded_file.lower():
-                                mock_key = "cardiomegaly_triage"
-
-                        result = make_api_call("triage", triage_data, demo_mode, mock_key)
-
-                        if result:
-                            # Store result in session state for display
-                            st.session_state.triage_result = result
-
-            except Exception as e:
-                st.error(f"Error processing image: {e}")
-
-    with col2:
-        st.subheader("Triage Results")
-
-        if hasattr(st.session_state, 'triage_result') and st.session_state.triage_result:
-            result = st.session_state.triage_result
-
-            # Classification with large text and color coding
-            predicted_class = result["classification"]["predicted_class"]
-            confidence = result["classification"]["confidence"]
-
-            # Color coding based on confidence and condition
-            if confidence >= 0.9:
-                color = "green"
-                confidence_level = "HIGH"
-            elif confidence >= 0.7:
-                color = "orange"
-                confidence_level = "MEDIUM"
-            else:
-                color = "red"
-                confidence_level = "LOW"
-
-            st.markdown(f"""
-            <div style="text-align: center; padding: 20px; border-radius: 10px; background-color: {color}20; border: 2px solid {color};">
-                <h2 style="color: {color}; margin: 0;">Classification</h2>
-                <h1 style="color: {color}; margin: 10px 0; font-size: 2.5em;">{predicted_class}</h1>
-                <h3 style="color: {color}; margin: 0;">Confidence: {confidence:.1%} ({confidence_level})</h3>
-            </div>
-            """, unsafe_allow_html=True)
-
-            # Confidence progress bar
-            st.subheader("Confidence Score")
-            st.progress(confidence)
-            st.write(f"**{confidence:.1%}** - {confidence_level} confidence")
-
-            # Routing decision
-            st.subheader("Triage Decision")
-            decision = result["triage"]["decision"]
-            priority = result["triage"]["priority_level"]
-            reviewer_type = result["triage"]["assigned_reviewer_type"]
-            estimated_time = result["triage"]["estimated_review_time"]
-
-            if decision == "auto_triage":
-                st.success(f"✅ **AUTO-APPROVED**")
-                st.write("No human review required")
-            elif decision == "expedited_review":
-                st.warning(f"⚡ **EXPEDITED REVIEW**")
-                st.write(f"Assigned to: {reviewer_type}")
-                st.write(f"Estimated review time: {estimated_time} minutes")
-            else:
-                st.error(f"🚨 **SENIOR REVIEW REQUIRED**")
-                st.write(f"Assigned to: {reviewer_type}")
-                st.write(f"Estimated review time: {estimated_time} minutes")
-
-            # Additional details
-            st.subheader("Processing Details")
-            col_a, col_b = st.columns(2)
-            with col_a:
-                st.write(f"**Processing Time**: {result['processing_time_ms']:.1f}ms")
-                st.write(f"**Model Version**: {result['model_version']}")
-            with col_b:
-                st.write(f"**Priority Level**: {priority}")
-                st.write(f"**Timestamp**: {result['timestamp'][:19]}")
-
-            # Reasoning
-            st.subheader("Clinical Reasoning")
-            st.info(result["triage"]["reasoning"])
-
-            # Raw API response
-            with st.expander("🔧 Raw API Response"):
-                st.json(result)
-
-        else:
-            st.info("Upload and analyze an image to see triage results")
-            st.markdown("""
-            **Expected Results:**
-            - **Classification**: AI prediction with confidence score
-            - **Triage Decision**: Routing based on confidence and clinical priority
-            - **Queue Assignment**: Auto-approval, expedited, or senior review
-            - **Processing Details**: Timing and model information
-            """)
-
-def render_audit_tab(demo_mode):
-    """Render the Audit Trail tab"""
-    st.header("📋 Audit Trail")
-
-    # Search controls
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        search_hash = st.text_input("🔍 Search by Image Hash", placeholder="Enter hash...")
-    with col2:
-        date_range = st.date_input("📅 Date Range", value=[datetime.now().date() - timedelta(days=7), datetime.now().date()])
-    with col3:
-        if st.button("🔄 Refresh", use_container_width=True):
-            st.rerun()
-
-    # Get audit data
-    audit_data = make_api_call("audit", demo_mode=demo_mode, mock_key="audit_trail")
-
-    if audit_data:
-        # Convert to DataFrame
-        df = pd.DataFrame(audit_data)
-
-        # Apply search filter
-        if search_hash:
-            df = df[df['image_hash'].str.contains(search_hash, case=False, na=False)]
-
-        # Apply date filter (if provided)
-        if len(date_range) == 2:
-            df['timestamp'] = pd.to_datetime(df['timestamp'])
-            start_date = pd.to_datetime(date_range[0])
-            end_date = pd.to_datetime(date_range[1]) + pd.Timedelta(days=1)
-            df = df[(df['timestamp'] >= start_date) & (df['timestamp'] <= end_date)]
-
-        st.subheader(f"Audit Records ({len(df)} entries)")
-
-        # Style the dataframe
-        def style_routing_decision(val):
-            if val == "Auto-Approved":
-                return 'background-color: #d4edda; color: #155724'
-            elif val == "Expedited Review":
-                return 'background-color: #fff3cd; color: #856404'
-            else:
-                return 'background-color: #f8d7da; color: #721c24'
-
-        def style_confidence(val):
-            if val >= 0.9:
-                return 'background-color: #d4edda; color: #155724'
-            elif val >= 0.7:
-                return 'background-color: #fff3cd; color: #856404'
-            else:
-                return 'background-color: #f8d7da; color: #721c24'
-
-        # Format and display dataframe
-        display_df = df.copy()
-        if 'timestamp' in display_df.columns:
-            display_df['timestamp'] = display_df['timestamp'].dt.strftime('%Y-%m-%d %H:%M:%S')
-
-        styled_df = display_df.style\
-            .apply(style_routing_decision, subset=['routing_decision'])\
-            .apply(style_confidence, subset=['confidence'])\
-            .format({'confidence': '{:.1%}'})\
-            .set_properties(**{'text-align': 'center'})
-
-        st.dataframe(styled_df, use_container_width=True, hide_index=True)
-
-        # Expandable row details
-        st.subheader("Detailed View")
-        if not df.empty:
-            selected_hash = st.selectbox("Select record for details:", df['image_hash'].tolist())
-
-            if selected_hash:
-                selected_row = df[df['image_hash'] == selected_hash].iloc[0]
-
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.write("**Image Hash:**", selected_row['image_hash'])
-                    st.write("**Classification:**", selected_row['classification'])
-                    st.write("**Confidence:**", f"{selected_row['confidence']:.1%}")
-                with col2:
-                    st.write("**Routing Decision:**", selected_row['routing_decision'])
-                    st.write("**Reviewer:**", selected_row['reviewer'])
-                    st.write("**Timestamp:**", selected_row['timestamp'])
-
-    else:
-        st.warning("No audit data available. Check API connection or enable Demo Mode.")
-
-def render_dashboard_tab(demo_mode):
-    """Render the Dashboard tab"""
-    st.header("📊 System Dashboard")
-
-    # Get dashboard data
-    dashboard_data = make_api_call("dashboard/metrics", demo_mode=demo_mode, mock_key="dashboard")
-
-    if dashboard_data:
-        metrics = dashboard_data["metrics"]
-
-        # Row 1: Metric cards
-        col1, col2, col3, col4 = st.columns(4)
-
-        with col1:
-            st.metric("Total Images Processed", f"{metrics['total_images']:,}")
-        with col2:
-            st.metric("Average Confidence", f"{metrics['avg_confidence']:.1%}", "0.2%")
-        with col3:
-            st.metric("Images Today", metrics['images_today'], "12")
-        with col4:
-            drift_color = "🟡" if metrics['drift_status'] == "Warning" else "🟢"
-            st.metric("Model Drift", f"{drift_color} {metrics['drift_status']}")
-
-        # Row 2: Classification breakdown
-        st.subheader("Classification Distribution")
-        class_df = pd.DataFrame(dashboard_data["classification_counts"])
-        fig_bar = px.bar(
-            class_df,
-            x='classification',
-            y='count',
-            color='count',
-            color_continuous_scale='viridis',
-            title="Predictions by Classification Type"
-        )
-        fig_bar.update_layout(height=400, showlegend=False)
-        st.plotly_chart(fig_bar, use_container_width=True)
-
-        # Row 3: Confidence trends over time
-        st.subheader("Model Performance Trends")
-        conf_df = pd.DataFrame(dashboard_data["confidence_over_time"])
-        conf_df['timestamp'] = pd.to_datetime(conf_df['timestamp'])
-
-        fig_line = px.line(
-            conf_df,
-            x='timestamp',
-            y='avg_confidence',
-            title="Average Confidence Score Over Time",
-            markers=True
-        )
-        fig_line.add_hline(y=0.7, line_dash="dash", line_color="orange", annotation_text="Medium Confidence Threshold")
-        fig_line.add_hline(y=0.9, line_dash="dash", line_color="green", annotation_text="High Confidence Threshold")
-        fig_line.update_layout(yaxis=dict(range=[0.5, 1.0]))
-        fig_line.update_layout(height=400)
-        st.plotly_chart(fig_line, use_container_width=True)
-
-        # Row 4: Routing distribution pie chart
-        st.subheader("Triage Routing Distribution")
-        routing_df = pd.DataFrame(dashboard_data["routing_distribution"])
-
-        fig_pie = px.pie(
-            routing_df,
-            values='count',
-            names='decision',
-            title="Triage Decision Distribution",
-            color_discrete_map={
-                'Auto-Approved': '#28a745',
-                'Expedited Review': '#ffc107',
-                'Senior Review': '#dc3545'
-            }
-        )
-        fig_pie.update_layout(height=400)
-        st.plotly_chart(fig_pie, use_container_width=True)
-
-        # Row 5: System health metrics
-        st.subheader("System Health & Compliance")
-
-        col1, col2, col3 = st.columns(3)
-
-        with col1:
-            st.markdown("**Model Status**")
-            st.success("✅ Model v1.2.1 Active")
-            st.success("✅ Inference API Healthy")
-            st.success("✅ Auto-scaling Enabled")
-
-        with col2:
-            st.markdown("**HIPAA Compliance**")
-            st.success("✅ Data Encryption Active")
-            st.success("✅ Audit Logging Complete")
-            st.success("✅ Access Controls Applied")
-
-        with col3:
-            st.markdown("**Performance Metrics**")
-            st.info("⚡ Avg Response: 187ms")
-            st.info("🎯 Uptime: 99.9%")
-            if metrics['drift_status'] == "Warning":
-                st.warning("⚠️ Drift: Monitoring")
-            else:
-                st.success("✅ Drift: Normal")
-
-    else:
-        st.warning("Dashboard data unavailable. Check API connection or enable Demo Mode.")
-
-@st.cache_data(ttl=60)
-def get_cached_dashboard_data(demo_mode):
-    """Cache dashboard data for 60 seconds"""
-    return make_api_call("dashboard/metrics", demo_mode=demo_mode, mock_key="dashboard")
-
-def main():
-    """Main Streamlit application"""
-    # Render sidebar and get demo mode
-    demo_mode = render_sidebar()
-
-    # Display connection status
-    if not demo_mode:
-        try:
-            response = requests.get(f"{API_BASE_URL}/health", timeout=5)
-            if response.status_code == 200:
-                st.success("🟢 Backend API Connected")
-            else:
-                st.error("🔴 Backend API Error")
-        except:
-            st.error("🔴 Backend API Disconnected - Enable Demo Mode or start the backend server")
-
-    # Main content tabs
-    tab1, tab2, tab3 = st.tabs(["🩻 Triage", "📋 Audit Trail", "📊 Dashboard"])
-
-    with tab1:
-        render_triage_tab(demo_mode)
-
-    with tab2:
-        render_audit_tab(demo_mode)
-
-    with tab3:
-        render_dashboard_tab(demo_mode)
-
-if __name__ == "__main__":
-    main()
+        st.markdown(f"**Model** `{clf.version}`")
+        st.markdown(f"**Routing threshold** {threshold:.3f}")
+        st.markdown(f"**Waiting for review** {len(audit.review_queue())}")
+        reviewer = st.text_input("Reviewer name", value="demo-reviewer")
+        use_llm = st.toggle("LLM summary via Amazon Bedrock", value=os.environ.get("TRIAGE_USE_BEDROCK") == "1",
+                            help="Off: a fixed template writes the summary. On: Claude on Bedrock writes it "
+                                 "from the model output only. Needs AWS credentials.")
+
+    tabs = st.tabs(["Triage a case", "Review queue", "Audit log", "Model evaluation"])
+    with tabs[0]:
+        triage_tab(clf, audit, threshold, use_llm)
+    with tabs[1]:
+        review_tab(audit, reviewer)
+    with tabs[2]:
+        audit_tab(audit)
+    with tabs[3]:
+        evaluation_tab(metrics)
+
+
+main()

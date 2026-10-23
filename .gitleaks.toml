@@ -1,0 +1,7 @@
+[extend]
+useDefault = true
+
+# Placeholder tokens in old README curl examples (for example "Bearer YOUR_JWT_TOKEN").
+[allowlist]
+description = "documentation placeholders"
+regexes = ['''YOUR_JWT_TOKEN''']

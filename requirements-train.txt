@@ -1,0 +1,5 @@
+# Extra packages for training and evaluation (python -m triage.train)
+-r requirements.txt
+medmnist==3.0.2
+scikit-learn==1.9.1
+matplotlib==3.11.2

@@ -1,7 +1,7 @@
 name: CI
 on:
   push:
-    branches: [main]
+    branches: [main, "rebuild/**"]
   pull_request:
     branches: [main]
 
@@ -12,12 +12,22 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
-      - name: Install dependencies
-        run: pip install -r requirements.txt
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: pip install -r requirements-dev.txt
       - name: Lint
-        run: pip install flake8 && flake8 --max-line-length 120 --ignore E501,W503,F401,F841,E266,W292 app.py mcp_server.py || echo "Lint warnings found but continuing..."
-      - name: Test imports
-        run: python -c "import app; print('app.py imports OK')"
-      - name: Test MCP server imports
-        run: python -c "import mcp_server; print('mcp_server.py imports OK')"
+        run: ruff check triage tests app.py
+      - name: Test
+        run: pytest
+
+  secrets-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Scan full git history with gitleaks
+        run: |
+          curl -sSL https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz | tar xz gitleaks
+          ./gitleaks git . --log-opts="--all" --redact --no-banner -c .gitleaks.toml
