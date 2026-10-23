@@ -189,8 +189,3 @@ the bundled images, and a Streamlit UI run). CI also scans the full git history 
 - Higher resolution input (128 or 224) and a comparison against the 64x64 model.
 - Reviewer identity from a login instead of a free-text name.
 - A container image and a deploy target, once the above is done.
-
-## Repository notes
-
-`legacy/` holds the earlier prototype (mock API, CDK stacks, Lambda stubs). None of it is used by
-the current app. It is kept until a decision is made to remove it.
