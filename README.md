@@ -37,7 +37,7 @@ research dataset, downsized to 64x64.
 
 ![evaluation](docs/screenshots/05-model-evaluation.png)
 
-## Why I built this
+## Case study
 
 **The problem.** Radiology departments read more chest X-rays than they have time for, and urgent
 studies can wait in the same queue as routine ones. Image models can help sort the worklist, but a
