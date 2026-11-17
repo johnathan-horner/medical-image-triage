@@ -1,24 +1,15 @@
-# Arrow verification: Medical Image Triage
+# Arrow check
 
-Diagram: `docs/architecture/architecture.png` ("What runs today"). Code read from `origin/main` at e73b006
-(Merge PR #4). There is no second diagram: no IaC exists on main (the legacy CDK app was deleted in 886d5a7).
+Every arrow that touches an AWS service, with the official AWS page that confirms it and its direction. Arrows between non-AWS parts (Streamlit, Gemini, SQLite, scikit-learn and so on) were checked against the code only. Links come from docs.aws.amazon.com only.
 
-| From | To | Action | Code evidence | AWS doc |
-|---|---|---|---|---|
-| Visitor / reviewer | Triage tab | HTTPS: run triage (pick a bundled sample or upload PNG/JPEG, press Run triage) | app.py:66-87 (`triage_tab`), app.py:214-216 | N/A (not AWS) |
-| Visitor / reviewer | Review queue tab | HTTPS: review a case (pick reviewer label, Submit review) | app.py:133-149 (`review_tab`), app.py:217-218 | N/A (not AWS) |
-| Triage tab | ResNet18 classifier | image (PIL image passed to `triage_case`, which calls `classifier.predict`; resized to 64x64 grayscale) | app.py:105-106; triage/pipeline.py:39; triage/model.py:38-41, 70-72 | N/A (not AWS) |
-| ResNet18 classifier | model.pt | loads weights (once per process, `st.cache_resource`; fp16 cast back to float32) | triage/model.py:55-59; triage/config.py:12; app.py:41-43 | N/A (not AWS) |
-| ResNet18 classifier | Confidence router | probability, confidence (`confidence = max(p, 1-p)`) | triage/model.py:75-78; triage/pipeline.py:39-40 | N/A (not AWS) |
-| metrics.json | Confidence router | threshold (`routing.threshold` = 0.9903, read at app start and passed to `triage_case`) | triage/pipeline.py:17-18; app.py:197, 216; artifacts/metrics.json:86; triage/routing.py:10-12 | N/A (not AWS) |
-| Confidence router | SQLite audit log | writes prediction row (`reviewer_action` = 'pending' for human_review, 'none' for auto_triage) | triage/pipeline.py:41-43; triage/audit.py:57-73 | N/A (not AWS) |
-| Review queue tab | SQLite audit log | reads pending cases (latest event per case with action 'pending'), writes review row ('confirmed' / 'overridden') | app.py:134, 147; triage/audit.py:75-83, 98-107 | N/A (not AWS) |
-| Confidence router | Summary builder | label, probability, route (6-field JSON payload: model_version, model_leaning, pneumonia_probability, confidence, routing_threshold, route) | triage/pipeline.py:44-47; triage/summary.py:42-51; tests/test_summary.py:30-38 | N/A (not AWS) |
-| Summary builder | Streamlit secrets | reads [aws] keys (`st.secrets["aws"]` access_key_id / secret_access_key / region; read in app.py and passed to `make_client`) | app.py:24-33, 101; triage/summary.py:83-91 | N/A (not AWS) |
-| Summary builder | Amazon Bedrock (Claude Haiku 4.5, us. profile) | InvokeModel (SigV4). `AnthropicBedrock(...).messages.create(model="us.anthropic.claude-haiku-4-5-20251001-v1:0", max_tokens=300, system=..., messages=[payload JSON])`; the SDK rewrites `/v1/messages` to `POST /model/{model}/invoke` on bedrock-runtime and signs with botocore SigV4Auth. The client calls Bedrock; Bedrock returns text + usage. | triage/summary.py:19, 83-111; app.py:96-106 | Verified. https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_InvokeModel.html (request is `POST /model/{modelId}/invoke`; modelId may be an inference profile ID; example uses a `us.anthropic...` profile with `anthropic_version` body). https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-haiku-4-5.html (Invoke and Messages supported on bedrock-runtime; geo ID `us.anthropic.claude-haiku-4-5-20251001-v1:0`; from us-east-1 it routes to us-east-1, us-east-2, us-west-2; bare model ID not supported on-demand). https://docs.aws.amazon.com/bedrock/latest/userguide/model-parameters-anthropic-claude-messages.html (Claude Messages API runs on InvokeModel / InvokeModelWithResponseStream). SDK mapping (non-AWS source): https://raw.githubusercontent.com/anthropics/anthropic-sdk-python/main/src/anthropic/lib/bedrock/_client.py and .../lib/aws/_auth.py (SigV4Auth). |
-| Summary builder | AWS STS | GetCallerIdentity (optional, dashed): runs only when env var `EXPECTED_AWS_ACCOUNT` is set; refuses to call Bedrock if the returned Account differs | triage/summary.py:67-80, 85 | Verified. https://docs.aws.amazon.com/STS/latest/APIReference/API_GetCallerIdentity.html (returns the Account of the calling credentials; no permissions required). Whether the variable is set on Streamlit Cloud cannot be seen from the repo. |
-| Summary builder | Fixed template | on error, cap or no keys (any exception, `stop_reason == "refusal"`, empty text, session cap reached, or toggle off) | triage/summary.py:54-60, 103-107, 114-123; app.py:91-104, 204-212 | N/A (not AWS) |
-| Summary builder | llm_cost_log.csv | appends token + cost row (timestamp, model, input/output tokens, estimated USD at 1.10 / 5.50 per million) | triage/summary.py:21-23, 108-110, 126-134 | N/A (not AWS) |
+## architecture.png (live)
 
-UNVERIFIED arrows: none. One sub-claim is not from an AWS page: that `AnthropicBedrock.messages.create`
-becomes InvokeModel and is SigV4-signed comes from the Anthropic SDK source (linked above), not docs.aws.amazon.com.
+| From | To | Action | AWS doc |
+|---|---|---|---|
+| Summary writer | Amazon Bedrock, Claude Haiku 4.5 | InvokeModel through the Anthropic SDK (AnthropicBedrock, Messages format) | https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_InvokeModel.html |
+| Summary writer | Amazon Bedrock | Request body uses the Anthropic Claude Messages API | https://docs.aws.amazon.com/bedrock/latest/userguide/model-parameters-anthropic-claude-messages.html |
+| IAM user | Amazon Bedrock | Authorizes InvokeModel on Haiku 4.5 only | https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_InvokeModel.html |
+
+## UNVERIFIED
+
+None.
