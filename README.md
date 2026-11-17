@@ -119,23 +119,7 @@ Built by Johnathan Horner, Shoot It Analytics LLC
 
 ## Architecture
 
-![Medical Image Triage: What runs today](docs/architecture/architecture.png)
-
-A visitor picks or uploads an X-ray in the Streamlit app. The ResNet18 model scores it, the router compares its confidence with 0.9903 and either auto-triages the case or puts it in the review queue, and each step is written to the audit log. The summary step sends only the six output fields to Claude Haiku 4.5 on Amazon Bedrock through the US cross-Region inference profile, or uses the fixed template.
-
-The diagrams are built with the Python `diagrams` library from [`docs/architecture/`](docs/architecture/). Each arrow is checked against the code and, for AWS calls, the AWS documentation; see [`docs/architecture/arrow-verification.md`](docs/architecture/arrow-verification.md). A 1200x1500 copy of each diagram (`*-linkedin.png`) is in the same folder.
-
-| Piece | File | Notes |
-|---|---|---|
-| Model | `triage/model.py` | torchvision ResNet18, ImageNet weights, one output logit |
-| Training and evaluation | `triage/train.py` | CPU only, writes `artifacts/` |
-| Routing | `triage/routing.py` | threshold choice and per-lane report |
-| Audit log | `triage/audit.py` | every event is a new row; nothing is updated in place |
-| Summary | `triage/summary.py` | Bedrock call, template fallback, per-call cost log |
-| App | `app.py` | Streamlit |
-
-The trained weights (`artifacts/model.pt`, 22 MB) and 32 test images (`samples/`) are in the repo,
-so the app and tests run without downloading the dataset.
+The architecture diagram and how it works are in the [Case study](#architecture) above.
 
 ## How to run
 
