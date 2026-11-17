@@ -40,26 +40,34 @@ research dataset, downsized to 64x64.
 
 ## Case study
 
-Built by Johnathan Horner, Shoot It Analytics LLC. The same case study is on the [portfolio](https://portfolio.johnathancloudspace.com/#medical-image-triage).
+**Medical Image Triage.** Scores chest X-rays with a small image model, auto-triages the cases it is sure about, sends the rest to a person, and logs every step. A Bedrock LLM writes a short note from the model's output only, never from the image.
 
-### The problem
+Status: **Live** · [Live app](https://medical-image-triage-horner.streamlit.app) · [GitHub](https://github.com/johnathan-horner/medical-image-triage) · [Portfolio](https://portfolio.johnathancloudspace.com/#medical-image-triage)
 
-Radiology worklists mix urgent and routine chest X-rays. A triage aid is only useful if it knows which cases it can sort on its own and which ones need a person, and if it leaves a record of every decision.
+### Real-world problem
+
+Imaging volumes have grown faster than the number of radiologists, and radiologists are leaving practice at over twice the rate of less than 10 years ago ([ACR Bulletin, 2026](https://www.acr.org/Clinical-Resources/Publications-and-Research/ACR-Bulletin/2026/radiologist-shortage-work-force-update)). A triage aid helps only if it knows which cases it can sort on its own, sends the rest to a person, and leaves a record of every decision.
 
 ### Why I built it
 
 I wanted to see whether a small image model trained on a laptop CPU could split X-rays into a confident lane with no missed pneumonia and a review lane for people, and whether an LLM could add a readable note without ever seeing the image.
 
+### Version 1
+
+The first version was a design for a TensorFlow EfficientNetB0 model on a SageMaker endpoint behind API Gateway, Cognito, Lambda and DynamoDB, described as production-grade, while its app ran on mock data. I rebuilt it in October 2026 as a pipeline that actually runs: a small model trained on a laptop CPU on public data, measured on the official test split, with a human review queue and an audit log.
+
 ### Key decisions
 
-1. **Pick the routing threshold on half of the test split and report on the other half.** The validation split is easier than test: a threshold picked there auto-triaged 98% of cases at only 92.8% accuracy. Tuning on half the test set gives honest routing numbers, at the cost of resting them on 312 images.
-2. **The LLM sees six numbers, never the image.** Claude Haiku 4.5 gets the label, probability, confidence, threshold, route and model version and writes two sentences. A fixed template takes over on any error, refusal, missing key or after 10 calls per session. The note adds wording, not information, which is the point: the LLM is not allowed to make clinical claims.
-3. **A small ResNet18 at 64x64, trained on CPU, with the weights in the repo.** The app, tests and CI run with no GPU and no dataset download. The tradeoff is low resolution and pediatric data from one center.
-4. **An append-only audit log in SQLite.** Every prediction and every reviewer decision is a new row, and a case's state is its latest row. It is simple to inspect and test. It is also one file shared by all visitors, with no sign-in, and not durable on the free host.
+- **Pick the routing threshold on half of the test split and report on the other half.** Tuning on half the test set gives honest routing numbers, at the cost of resting them on 312 images.
+- **The LLM sees six numbers, never the image.** Claude Haiku 4.5 gets the label, probability, confidence, threshold, route and model version and writes two sentences. A fixed template takes over on any error, refusal, missing key or after 10 calls per session. The note adds wording, not information, which is the point: the LLM is not allowed to make clinical claims.
+- **A small ResNet18 at 64x64, trained on CPU, with the weights in the repo.** The app, tests and CI run with no GPU and no dataset download. The tradeoff is low resolution and pediatric data from one center.
+- **An append-only audit log in SQLite.** Every prediction and every reviewer decision is a new row, and a case's state is its latest row. It is simple to inspect and test, but it is one file shared by all visitors, with no sign-in.
 
 ### Architecture
 
-The diagram and the flow are in [Architecture](#architecture) below.
+![Medical Image Triage: Live architecture](docs/architecture/architecture.png)
+
+A visitor picks or uploads an X-ray in the Streamlit app. The ResNet18 model scores it, the router compares its confidence with 0.9903 and either auto-triages the case or puts it in the review queue, and each step is written to the audit log. The summary step sends only the six output fields to Claude Haiku 4.5 on Amazon Bedrock through the US cross-Region inference profile, or uses the fixed template.
 
 ### Governance and safety
 
@@ -77,6 +85,21 @@ The diagram and the flow are in [Architecture](#architecture) below.
 - Live check on 2026-11-16: one Bedrock summary, 157 input and 49 output tokens, about $0.0004.
 - 23 automated tests in CI.
 
+### What I got wrong
+
+- **I documented the target design before the pipeline existed.** The first version described a full AWS deployment while the app ran on mock data. The rebuild started from a model I could train and measure.
+- **The validation split was too easy.** A threshold picked on validation auto-triaged 98% of cases at only 92.8% accuracy on test, so the threshold is now picked on half of the test split and reported on the other half.
+- **Old code outlived the rebuild.** A compiled file from the first version stayed in the repo after the rebuild, with claims the new code does not make. It was deleted in November 2026.
+- **The audit log lives on the free host's disk.** It is shared by every visitor and resets when the app restarts, which is fine for a reference app and not for any real use.
+
+### Constraints
+
+- Public research data only (PneumoniaMNIST, CC BY 4.0); never used with patients.
+- Trained on a laptop CPU with no GPU; the 22 MB model file ships in the repo.
+- Hosted on the free Streamlit tier, which has no IAM role, so the Bedrock key comes from the host's secret store.
+- The LLM sees only six output fields and makes at most 10 calls per browser session.
+- Every result is decision support only, not a diagnosis.
+
 ### Limits
 
 Built on public research data (PneumoniaMNIST: pediatric X-rays from one center at 64x64), never used with patients, not a medical device and not reviewed by a regulator. Specificity is 79.9%, so some normal X-rays get flagged.
@@ -85,11 +108,14 @@ Built on public research data (PneumoniaMNIST: pediatric X-rays from one center 
 
 Train and validate on full-resolution images from the target hospitals with subgroup checks, run it in the hospital's own AWS account with sign-in, a durable audit store and role-based review, and go through clinical validation and regulatory review before any clinical use.
 
-### Links
+### Sources
 
-- Live app: https://medical-image-triage-horner.streamlit.app
-- GitHub: https://github.com/johnathan-horner/medical-image-triage
-- Diagram: [docs/architecture/architecture.png](docs/architecture/architecture.png)
+- [ACR Bulletin: The Radiologist Shortage, a Workforce Update from HPI (2026)](https://www.acr.org/Clinical-Resources/Publications-and-Research/ACR-Bulletin/2026/radiologist-shortage-work-force-update)
+- [Live app](https://medical-image-triage-horner.streamlit.app)
+- [GitHub](https://github.com/johnathan-horner/medical-image-triage)
+- [Portfolio](https://portfolio.johnathancloudspace.com/#medical-image-triage)
+
+Built by Johnathan Horner, Shoot It Analytics LLC
 
 ## Architecture
 
