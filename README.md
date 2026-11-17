@@ -1,9 +1,10 @@
-# Chest X-ray Triage Demo
+# Medical Image Triage
 
 ![CI](https://github.com/johnathan-horner/medical-image-triage/actions/workflows/ci.yml/badge.svg)
 
-**Status: In progress.** The model, routing, LLM summary, audit log and Streamlit app run locally
-today on a laptop CPU. There is no hosted demo of this version. **Decision support only, not a diagnosis.**
+**Status: Live.** https://medical-image-triage-horner.streamlit.app (checked 2026-11-16: one triage
+produced a Bedrock Claude Haiku 4.5 summary; the free Streamlit host puts the app to sleep when idle and
+it wakes on the first visit). It also runs locally on a laptop CPU. **Decision support only, not a diagnosis.**
 
 Independent reference project by Shoot It Analytics LLC. Built with public or synthetic data.
 
@@ -37,73 +38,92 @@ research dataset, downsized to 64x64.
 
 ![evaluation](docs/screenshots/05-model-evaluation.png)
 
-## Why I built this
+## Case study
 
-**The problem.** Radiology departments read more chest X-rays than they have time for, and urgent
-studies can wait in the same queue as routine ones. Image models can help sort the worklist, but a
-model that is confidently wrong is dangerous, so any triage aid has to know when to hand a case to a
-person and has to leave a record of what it did.
+**Medical Image Triage.** Scores chest X-rays with a small image model, auto-triages the cases it is sure about, sends the rest to a person, and logs every step. A Bedrock LLM writes a short note from the model's output only, never from the image.
 
-**What I set out to prove.** Whether a small image model trained on a laptop CPU can split chest
-X-rays into cases it can sort on its own with high accuracy and cases that need a person, with every
-step logged and every result clearly labeled as decision support.
+Status: **Live** · [Live app](https://medical-image-triage-horner.streamlit.app) · [GitHub](https://github.com/johnathan-horner/medical-image-triage) · [Portfolio](https://portfolio.johnathancloudspace.com/#medical-image-triage)
 
-**Key design decisions**
-- **Data:** PneumoniaMNIST (public, CC BY 4.0), pediatric chest X-rays at 64x64. Small enough to
-  train on a CPU in about half an hour.
-- **Model:** ResNet18 pretrained on ImageNet and fine-tuned, a well-understood baseline, not a novel
-  architecture.
-- **Threshold:** picked on one half of the test split and reported on the other half. A threshold
-  picked on the validation split failed, because this dataset's validation split is easier than its
-  test split.
-- **Guardrails:** the LLM sees only the model's numbers and route, never the image; a template takes
-  over if Bedrock is unavailable; every result carries "Decision support only, not a diagnosis.";
-  the audit log is append-only.
-- **Cost:** CPU training and about $0.0005 per LLM summary on Claude Haiku 4.5 through Bedrock;
-  the hosted app allows 10 LLM summaries per browser session.
+### Real-world problem
 
-**Results.** On the held-out test split: 92.1% accuracy, 99.5% recall for pneumonia, 79.9%
-specificity. With the routing threshold, 76.9% of cases were auto-triaged at 97.9% accuracy with no
-missed pneumonia, and the rest went to a person (details below).
+Imaging volumes have grown faster than the number of radiologists, and radiologists are leaving practice at over twice the rate of less than 10 years ago ([ACR Bulletin, 2026](https://www.acr.org/Clinical-Resources/Publications-and-Research/ACR-Bulletin/2026/radiologist-shortage-work-force-update)). A triage aid helps only if it knows which cases it can sort on its own, sends the rest to a person, and leaves a record of every decision.
 
-**Limits.** Public research data only; never used with real patients. Not a medical device, not
-cleared or certified for clinical use, and not a diagnosis.
+### Why I built it
 
-**What I'd do next in a real deployment.** Validate on images from the target hospitals and
-equipment at full resolution, calibrate probabilities, run a prospective silent trial against
-radiologist reads, add reviewer authentication, and go through the regulatory path before any
-clinical use.
+I wanted to see whether a small image model trained on a laptop CPU could split X-rays into a confident lane with no missed pneumonia and a review lane for people, and whether an LLM could add a readable note without ever seeing the image.
+
+### Version 1
+
+The first version was a design for a TensorFlow EfficientNetB0 model on a SageMaker endpoint behind API Gateway, Cognito, Lambda and DynamoDB, described as production-grade, while its app ran on mock data. I rebuilt it in October 2026 as a pipeline that actually runs: a small model trained on a laptop CPU on public data, measured on the official test split, with a human review queue and an audit log.
+
+### Key decisions
+
+- **Pick the routing threshold on half of the test split and report on the other half.** Tuning on half the test set gives honest routing numbers, at the cost of resting them on 312 images.
+- **The LLM sees six numbers, never the image.** Claude Haiku 4.5 gets the label, probability, confidence, threshold, route and model version and writes two sentences. A fixed template takes over on any error, refusal, missing key or after 10 calls per session. The note adds wording, not information, which is the point: the LLM is not allowed to make clinical claims.
+- **A small ResNet18 at 64x64, trained on CPU, with the weights in the repo.** The app, tests and CI run with no GPU and no dataset download. The tradeoff is low resolution and pediatric data from one center.
+- **An append-only audit log in SQLite.** Every prediction and every reviewer decision is a new row, and a case's state is its latest row. It is simple to inspect and test, but it is one file shared by all visitors, with no sign-in.
+
+### Architecture
+
+![Medical Image Triage: Live architecture](docs/architecture/architecture.png)
+
+A visitor picks or uploads an X-ray in the Streamlit app. The ResNet18 model scores it, the router compares its confidence with 0.9903 and either auto-triages the case or puts it in the review queue, and each step is written to the audit log. The summary step sends only the six output fields to Claude Haiku 4.5 on Amazon Bedrock through the US cross-Region inference profile, or uses the fixed template.
+
+### Governance and safety
+
+- Confidence gate: anything below 0.9903 confidence goes to a human review queue, where a reviewer confirms or overrides.
+- Append-only audit log of every prediction and review, viewable and downloadable as CSV.
+- The LLM gets six output fields and never the image; its instructions forbid findings, diagnoses and treatment advice.
+- Template fallback on any error or refusal, and a cap of 10 LLM calls per browser session.
+- Every result carries "Decision support only, not a diagnosis"; tokens and estimated cost are logged per call.
+- Secrets come only from the host's secret store, and CI scans the full git history for leaked keys.
+
+### Results
+
+- PneumoniaMNIST test split, 624 images: 92.1% accuracy, 99.5% pneumonia recall, 79.9% specificity, ROC AUC 0.982.
+- Routing, on the half of the test split not used to pick the threshold (312 images): 76.9% auto-triaged at 97.9% accuracy with zero missed pneumonia; 23.1% go to review.
+- Live check on 2026-11-16: one Bedrock summary, 157 input and 49 output tokens, about $0.0004.
+- 23 automated tests in CI.
+
+### What I got wrong
+
+- **I documented the target design before the pipeline existed.** The first version described a full AWS deployment while the app ran on mock data. The rebuild started from a model I could train and measure.
+- **The validation split was too easy.** A threshold picked on validation auto-triaged 98% of cases at only 92.8% accuracy on test, so the threshold is now picked on half of the test split and reported on the other half.
+- **Old code outlived the rebuild.** A compiled file from the first version stayed in the repo after the rebuild, with claims the new code does not make. It was deleted in November 2026.
+- **The audit log lives on the free host's disk.** It is shared by every visitor and resets when the app restarts, which is fine for a reference app and not for any real use.
+
+### Constraints
+
+- Public research data only (PneumoniaMNIST, CC BY 4.0); never used with patients.
+- Trained on a laptop CPU with no GPU; the 22 MB model file ships in the repo.
+- Hosted on the free Streamlit tier, which has no IAM role, so the Bedrock key comes from the host's secret store.
+- The LLM sees only six output fields and makes at most 10 calls per browser session.
+- Every result is decision support only, not a diagnosis.
+
+### Limits
+
+Built on public research data (PneumoniaMNIST: pediatric X-rays from one center at 64x64), never used with patients, not a medical device and not reviewed by a regulator. Specificity is 79.9%, so some normal X-rays get flagged.
+
+### What I'd do in a real deployment
+
+Train and validate on full-resolution images from the target hospitals with subgroup checks, run it in the hospital's own AWS account with sign-in, a durable audit store and role-based review, and go through clinical validation and regulatory review before any clinical use.
+
+### Sources
+
+- [ACR Bulletin: The Radiologist Shortage, a Workforce Update from HPI (2026)](https://www.acr.org/Clinical-Resources/Publications-and-Research/ACR-Bulletin/2026/radiologist-shortage-work-force-update)
+- [Live app](https://medical-image-triage-horner.streamlit.app)
+- [GitHub](https://github.com/johnathan-horner/medical-image-triage)
+- [Portfolio](https://portfolio.johnathancloudspace.com/#medical-image-triage)
+
+Built by Johnathan Horner, Shoot It Analytics LLC
 
 ## Architecture
 
-```mermaid
-flowchart LR
-    IMG[Chest X-ray] --> M[ResNet18 classifier<br/>p of pneumonia, confidence]
-    M --> R{confidence >= 0.990?}
-    R -- yes --> A[Auto-triage]
-    R -- no --> Q[Human review queue]
-    Q --> H[Reviewer confirms or overrides]
-    M --> S[Summary<br/>Bedrock Claude or template]
-    A --> L[(Audit log<br/>SQLite, append-only)]
-    Q --> L
-    H --> L
-```
-
-| Piece | File | Notes |
-|---|---|---|
-| Model | `triage/model.py` | torchvision ResNet18, ImageNet weights, one output logit |
-| Training and evaluation | `triage/train.py` | CPU only, writes `artifacts/` |
-| Routing | `triage/routing.py` | threshold choice and per-lane report |
-| Audit log | `triage/audit.py` | every event is a new row; nothing is updated in place |
-| Summary | `triage/summary.py` | Bedrock call, template fallback, per-call cost log |
-| App | `app.py` | Streamlit |
-
-The trained weights (`artifacts/model.pt`, 22 MB) and 32 test images (`samples/`) are in the repo,
-so the app and tests run without downloading the dataset.
+The architecture diagram and how it works are in the [Case study](#architecture) above.
 
 ## How to run
 
-Python 3.10 to 3.13. On Linux, requirements.txt installs CPU-only PyTorch 2.6; on macOS it pins PyTorch 2.2.2, the last version with Intel Mac wheels.
+Python 3.9 to 3.13 (CI uses 3.11). On Linux, requirements.txt installs CPU-only PyTorch 2.6; on macOS it pins PyTorch 2.2.2, the last version with Intel Mac wheels.
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
@@ -131,8 +151,8 @@ export TRIAGE_BEDROCK_MODEL=us.anthropic.claude-haiku-4-5-20251001-v1:0   # defa
 streamlit run app.py
 ```
 
-Without credentials the toggle is off and a fixed template writes every summary. Measured on
-2026-10-23: about 150 input and 40 to 65 output tokens, USD 0.0004 to 0.0005 per summary. Calls are
+Without credentials the toggle is off and a fixed template writes every summary. A live check on
+2026-11-16 used 157 input and 49 output tokens, about USD 0.0004 for one summary. Calls are
 logged to `llm_cost_log.csv`; the app caps LLM summaries at 10 per browser session.
 
 Retrain and re-evaluate (downloads PneumoniaMNIST, about 20 MB; took 34 minutes on a 2-core laptop):
@@ -176,7 +196,7 @@ part in picking it:
 A threshold picked on the validation split instead would have been 0.553 and auto-triaged 98% of
 cases at 92.8% accuracy, because PneumoniaMNIST's validation split is easier than its test split.
 
-Tests: 20 pytest tests (routing, audit log, summary with a fake Bedrock client, model inference on
+Tests: 23 pytest tests (routing, audit log, summary with a fake Bedrock client, model inference on
 the bundled images, and a Streamlit UI run). CI also scans the full git history with gitleaks.
 
 ## Limits
@@ -200,4 +220,4 @@ the bundled images, and a Streamlit UI run). CI also scans the full git history 
 - Probability calibration (temperature scaling) so confidence is closer to real accuracy.
 - Higher resolution input (128 or 224) and a comparison against the 64x64 model.
 - Reviewer identity from a login instead of a free-text name.
-- A container image and a deploy target, once the above is done.
+- A container image for hosts other than Streamlit Community Cloud, once the above is done.
